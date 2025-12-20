@@ -1,0 +1,137 @@
+[
+  {
+    "type": "heading",
+    "defaultValue": "GridSpace Settings"
+  },
+  {
+    "type": "section",
+    "items": [
+      {
+        "type": "heading",
+        "defaultValue": "Colors"
+      },
+      {
+        "type": "color",
+        "messageKey": "BackgroundColor",
+        "defaultValue": "000000",
+        "label": "Background Color",
+        "sunlight": true,
+        "allowGray": true
+      },
+      {
+        "type": "color",
+        "messageKey": "ForegroundColor",
+        "defaultValue": "FFFFFF",
+        "label": "Foreground Color",
+        "sunlight": true,
+        "allowGray": true
+      },
+      {
+        "type": "color",
+        "messageKey": "SecondaryColor",
+        "defaultValue": "AAAAAA",
+        "label": "Secondary Color (gray elements)",
+        "sunlight": true,
+        "allowGray": true
+      }
+    ]
+  },
+  {
+    "type": "section",
+    "items": [
+      {
+        "type": "heading",
+        "defaultValue": "Steps"
+      },
+      {
+        "type": "toggle",
+        "messageKey": "ShowSteps",
+        "defaultValue": true,
+        "label": "Show Step Bar"
+      },
+      {
+        "type": "input",
+        "messageKey": "StepGoal",
+        "defaultValue": "8000",
+        "label": "Daily Step Goal",
+        "attributes": {
+          "type": "number",
+          "min": 1000,
+          "max": 50000,
+          "step": 500
+        }
+      }
+    ]
+  },
+  {
+    "type": "section",
+    "items": [
+      {
+        "type": "heading",
+        "defaultValue": "Display Options"
+      },
+      {
+        "type": "toggle",
+        "messageKey": "ShowBattery",
+        "defaultValue": true,
+        "label": "Show Battery Indicator"
+      },
+      {
+        "type": "toggle",
+        "messageKey": "ShowDate",
+        "defaultValue": true,
+        "label": "Show Date"
+      },
+      {
+        "type": "toggle",
+        "messageKey": "Use24Hour",
+        "defaultValue": true,
+        "label": "Use 24-Hour Format"
+      },
+      {
+        "type": "select",
+        "messageKey": "DateFormat",
+        "defaultValue": "DDMM",
+        "label": "Date Format",
+        "options": [
+          {
+            "label": "DD/MM (Day/Month)",
+            "value": "DDMM"
+          },
+          {
+            "label": "MM/DD (Month/Day)",
+            "value": "MMDD"
+          }
+        ]
+      },
+      {
+        "type": "select",
+        "messageKey": "LoadAnimation",
+        "defaultValue": "2",
+        "label": "Load Animation",
+        "options": [
+          {
+            "label": "None",
+            "value": "0"
+          },
+          {
+            "label": "Wave Fill",
+            "value": "1"
+          },
+          {
+            "label": "Random Pop",
+            "value": "2"
+          },
+          {
+            "label": "Matrix",
+            "value": "3"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "submit",
+    "defaultValue": "Save Settings"
+  }
+]

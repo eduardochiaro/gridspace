@@ -2,12 +2,19 @@
   "name": "gridspace",
   "author": "Eduardo Chiaro",
   "version": "1.0.0",
-  "keywords": ["pebble-app"],
+  "keywords": [
+    "pebble-app",
+    "watchface",
+    "grid",
+    "space"
+  ],
   "private": true,
-  "dependencies": {},
+  "dependencies": {
+    "@rebble/clay": "^1.0.6"
+  },
   "pebble": {
     "displayName": "GridSpace",
-    "uuid": "00000000-0000-0000-0000-000000000001",
+    "uuid": "e53fceae-1ce0-48c2-9aab-06571b0be35e",
     "sdkVersion": "3",
     "enableMultiJS": true,
     "targetPlatforms": [
@@ -15,16 +22,36 @@
       "basalt",
       "chalk",
       "diorite",
-      "emery"
+      "emery",
+      "flint"
+    ],
+    "capabilities": [
+      "health"
     ],
     "watchapp": {
-      "watchface": false
+      "watchface": true
     },
     "messageKeys": [
-      "dummy"
+      "BackgroundColor",
+      "ForegroundColor",
+      "SecondaryColor",
+      "StepGoal",
+      "ShowSteps",
+      "ShowBattery",
+      "ShowDate",
+      "Use24Hour",
+      "DateFormat",
+      "LoadAnimation"
     ],
     "resources": {
-      "media": []
+      "media": [
+        {
+          "menuIcon": "true",
+          "type": "png",
+          "name": "MENU_ICON",
+          "file": "icon.png"
+        }
+      ]
     }
   }
 }
