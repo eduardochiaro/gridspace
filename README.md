@@ -56,6 +56,7 @@ Access settings through the Pebble app:
 - **Display Toggles**: Show/hide steps, battery, and date
 - **Time Format**: 12-hour or 24-hour display
 - **Date Format**: DD/MM or MM/DD
+- **Load Animation**: Pick a load animation: None, Wave Fill, Random Pop, Matrix
 
 ## Platform Support
 
