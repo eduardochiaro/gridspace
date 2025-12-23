@@ -10,17 +10,24 @@ A minimalist Pebble watchface with a distinctive pixel-grid aesthetic. Every ele
 ### Pebble Time/Time Steel
 ![Basalt 1](assets/basalt_1.png)
 ![Basalt 2](assets/basalt_2.png)
+![Basalt 3](assets/basalt_3.png)
 
 ### Pebble Time Round
-![Chalk](assets/chalk.png)
+![Chalk 1](assets/chalk_1.png)
+![Chalk 2](assets/chalk_2.png)
+![Chalk 3](assets/chalk_3.png)
 
 ### Pebble 2/Duo
-![Diorite](assets/diorite.png)
+![Diorite 1](assets/diorite_1.png)
+![Diorite 2](assets/diorite_2.png)
 
 ### Pebble Time 2
-![Emery](assets/emery.png)
+![Emery 1](assets/emery_1.png)
+![Emery 2](assets/emery_2.png)
+![Emery 3](assets/emery_3.png)
 
 ## Store
+[Rebble App Store](https://apps.rebble.io/en_US/application/694a99bbfb639a000a570b91)
 
 ## Features
 
