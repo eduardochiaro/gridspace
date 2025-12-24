@@ -32,7 +32,7 @@ static int s_grid_offset_x;
 static int s_grid_offset_y;
 
 // Cached time values (updated once per minute)
-static uint8_t s_hour, s_minute, s_day, s_month, s_week;
+static uint8_t s_hour, s_minute, s_day, s_month, s_week, s_weekday;
 static int8_t s_prev_hour = -1, s_prev_minute = -1;
 
 // Animation constants
@@ -62,7 +62,7 @@ static struct {
   uint8_t show_battery:1;
   uint8_t show_date:1;
   uint8_t use_24h:1;
-  uint8_t date_format:2;  // 0=MMDD, 1=DDMM, 2=WWDD
+  uint8_t date_format:2;  // 0=MMDD, 1=DDMM, 2=WWDD, 3=WDDD (weekday/day)
   uint8_t reserved:1;  // For future use
 } s_flags = {
   .health_available = 0,
@@ -103,6 +103,34 @@ static const uint8_t small_digit_patterns[10][15] = {
   {2,2,2, 0,0,2, 0,2,0, 0,2,0, 0,2,0}, // 7
   {2,2,2, 2,0,2, 2,2,2, 2,0,2, 2,2,2}, // 8
   {2,2,2, 2,0,2, 2,2,2, 0,0,2, 2,2,2}  // 9
+};
+
+// Small letter patterns (3x5) for weekday names
+// Letters: M, O, T, U, W, E, H, F, R, S, A
+static const uint8_t small_letter_patterns[11][15] = {
+  {2,0,2, 2,2,2, 2,2,2, 2,0,2, 2,0,2}, // M
+  {2,2,2, 2,0,2, 2,0,2, 2,0,2, 2,2,2}, // O
+  {2,2,2, 0,2,0, 0,2,0, 0,2,0, 0,2,0}, // T
+  {2,0,2, 2,0,2, 2,0,2, 2,0,2, 2,2,2}, // U
+  {2,0,2, 2,0,2, 2,2,2, 2,2,2, 2,0,2}, // W
+  {2,2,2, 2,0,0, 2,2,2, 2,0,0, 2,2,2}, // E
+  {2,0,2, 2,0,2, 2,2,2, 2,0,2, 2,0,2}, // H
+  {2,2,2, 2,0,0, 2,2,2, 2,0,0, 2,0,0}, // F
+  {2,2,2, 2,0,2, 2,2,2, 2,2,0, 2,0,2}, // R
+  {2,2,2, 2,0,0, 2,2,2, 0,0,2, 2,2,2}, // S
+  {2,2,2, 2,0,2, 2,2,2, 2,0,2, 2,0,2}  // A
+};
+
+// Weekday letter indices: [day][letter] where day: 0=Mon, 1=Tue, 2=Wed, 3=Thu, 4=Fri, 5=Sat, 6=Sun
+// Letter indices: M=0, O=1, T=2, U=3, W=4, E=5, H=6, F=7, R=8, S=9, A=10
+static const uint8_t weekday_letters[7][2] = {
+  {0, 1},  // MO - Monday
+  {2, 3},  // TU - Tuesday
+  {4, 5},  // WE - Wednesday
+  {2, 6},  // TH - Thursday
+  {7, 8},  // FR - Friday
+  {9, 10}, // SA - Saturday
+  {9, 3}   // SU - Sunday
 };
 
 // Digit patterns (5x7 for each digit 0-9)
@@ -220,6 +248,23 @@ static void draw_digit_animated(GContext *ctx, int old_digit, int new_digit, flo
 static void draw_small_digit(GContext *ctx, int digit, int col, int row, bool use_gray) {
   if (digit < 0 || digit > 9) return;
   const uint8_t *pattern = small_digit_patterns[digit];
+  
+  for (int r = 0; r < 5; r++) {
+    for (int c = 0; c < 3; c++) {
+      uint8_t state = pattern[r * 3 + c];
+      if (state != CELL_EMPTY) {
+        int x = s_grid_offset_x + (col + c) * CELL_SIZE;
+        int y = s_grid_offset_y + (row + r) * CELL_SIZE;
+        draw_cell_at(ctx, x, y, state, use_gray);
+      }
+    }
+  }
+}
+
+// Draw a small letter directly (for weekday names)
+static void draw_small_letter(GContext *ctx, int letter_index, int col, int row, bool use_gray) {
+  if (letter_index < 0 || letter_index > 10) return;
+  const uint8_t *pattern = small_letter_patterns[letter_index];
   
   for (int r = 0; r < 5; r++) {
     for (int c = 0; c < 3; c++) {
@@ -456,6 +501,17 @@ static void canvas_update_proc(Layer *layer, GContext *ctx) {
       draw_small_digit(ctx, d1, col, date_row, true);
       col += 3 + small_spacing;
       draw_small_digit(ctx, d2, col, date_row, true);
+    } else if (s_flags.date_format == 3) {
+      // WD/DD format (Weekday/Day) - e.g., MO/24
+      draw_small_letter(ctx, weekday_letters[s_weekday][0], col, date_row, true);
+      col += 3 + small_spacing;
+      draw_small_letter(ctx, weekday_letters[s_weekday][1], col, date_row, true);
+      col += 3 + small_spacing;
+      draw_separator(ctx, col, date_row, true);
+      col += 2 + small_spacing;  // Separator is now 2 cols wide
+      draw_small_digit(ctx, d1, col, date_row, true);
+      col += 3 + small_spacing;
+      draw_small_digit(ctx, d2, col, date_row, true);
     } else {
       // MM/DD format
       draw_small_digit(ctx, mo1, col, date_row, true);
@@ -523,6 +579,9 @@ static void update_time(void) {
   }
   
   s_week = (uint8_t)week_number;
+  
+  // Store weekday (0=Monday, 6=Sunday)
+  s_weekday = t->tm_wday == 0 ? 6 : t->tm_wday - 1;
   
   if (!s_flags.use_24h) {
     new_hour = new_hour % 12;
@@ -687,11 +746,13 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   // Date format
   Tuple *date_fmt_t = dict_find(iter, MESSAGE_KEY_DateFormat);
   if (date_fmt_t) {
-    // Compare string value: "MMDD" = 0, "DDMM" = 1, "WWDD" = 2
+    // Compare string value: "MMDD" = 0, "DDMM" = 1, "WWDD" = 2, "WDDD" = 3
     if (strcmp(date_fmt_t->value->cstring, "DDMM") == 0) {
       s_flags.date_format = 1;
     } else if (strcmp(date_fmt_t->value->cstring, "WWDD") == 0) {
       s_flags.date_format = 2;
+    } else if (strcmp(date_fmt_t->value->cstring, "WDDD") == 0) {
+      s_flags.date_format = 3;
     } else {
       s_flags.date_format = 0;  // MMDD
     }
