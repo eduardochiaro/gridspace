@@ -32,7 +32,7 @@ static int s_grid_offset_x;
 static int s_grid_offset_y;
 
 // Cached time values (updated once per minute)
-static uint8_t s_hour, s_minute, s_day, s_month;
+static uint8_t s_hour, s_minute, s_day, s_month, s_week;
 static int8_t s_prev_hour = -1, s_prev_minute = -1;
 
 // Animation constants
@@ -62,15 +62,15 @@ static struct {
   uint8_t show_battery:1;
   uint8_t show_date:1;
   uint8_t use_24h:1;
-  uint8_t date_format_ddmm:1;
-  uint8_t reserved:2;  // For future use
+  uint8_t date_format:2;  // 0=MMDD, 1=DDMM, 2=WWDD
+  uint8_t reserved:1;  // For future use
 } s_flags = {
   .health_available = 0,
   .show_steps = 1,
   .show_battery = 1,
   .show_date = 1,
   .use_24h = 1,
-  .date_format_ddmm = 1,
+  .date_format = 1,
   .reserved = 0
 };
 
@@ -314,7 +314,7 @@ static void draw_step_bar(GContext *ctx, int col, int row) {
 // Draw battery indicator (2 cols x 3 rows, drains top to bottom)
 static void draw_battery(GContext *ctx, int col, int row) {
   const int total_cells = 6;
-  int empty_cells = total_cells - (s_battery_level * total_cells) / 100;
+  int filled_cells = (s_battery_level * total_cells) / 100;
   int remainder = (s_battery_level * total_cells) % 100;
   
   int cell_index = 0;
@@ -323,15 +323,18 @@ static void draw_battery(GContext *ctx, int col, int row) {
       int x = s_grid_offset_x + (col + c) * CELL_SIZE;
       int y = s_grid_offset_y + (row + r) * CELL_SIZE;
       
-      if (cell_index < empty_cells) {
-        // Empty (drained) cell
-        draw_cell_at(ctx, x, y, CELL_PARTIAL, true);
-      } else if (cell_index == empty_cells && remainder > 0) {
-        // Partially filled cell
-        draw_cell_at(ctx, x, y, CELL_PARTIAL, true);
-      } else {
-        // Fully filled cell
+      // Calculate which cell from bottom (0 = bottom, 5 = top)
+      int cell_from_bottom = total_cells - 1 - cell_index;
+      
+      if (cell_from_bottom < filled_cells) {
+        // Fully filled cell - use primary color
         draw_cell_at(ctx, x, y, CELL_FULL, false);
+      } else if (cell_from_bottom == filled_cells && remainder > 0) {
+        // Partially filled cell (transition) - use secondary color
+        draw_cell_at(ctx, x, y, CELL_PARTIAL, false);
+      } else {
+        // Empty (drained) cell - use secondary color
+        draw_cell_at(ctx, x, y, CELL_PARTIAL, true);
       }
       cell_index++;
     }
@@ -426,10 +429,12 @@ static void canvas_update_proc(Layer *layer, GContext *ctx) {
     int d2 = s_day % 10;
     int mo1 = s_month / 10;
     int mo2 = s_month % 10;
+    int w1 = s_week / 10;
+    int w2 = s_week % 10;
     
     col = date_col;
     
-    if (s_flags.date_format_ddmm) {
+    if (s_flags.date_format == 1) {
       // DD/MM format
       draw_small_digit(ctx, d1, col, date_row, true);
       col += 3 + small_spacing;
@@ -440,6 +445,17 @@ static void canvas_update_proc(Layer *layer, GContext *ctx) {
       draw_small_digit(ctx, mo1, col, date_row, true);
       col += 3 + small_spacing;
       draw_small_digit(ctx, mo2, col, date_row, true);
+    } else if (s_flags.date_format == 2) {
+      // WW/DD format (Week/Day)
+      draw_small_digit(ctx, w1, col, date_row, true);
+      col += 3 + small_spacing;
+      draw_small_digit(ctx, w2, col, date_row, true);
+      col += 3 + small_spacing;
+      draw_separator(ctx, col, date_row, true);
+      col += 2 + small_spacing;  // Separator is now 2 cols wide
+      draw_small_digit(ctx, d1, col, date_row, true);
+      col += 3 + small_spacing;
+      draw_small_digit(ctx, d2, col, date_row, true);
     } else {
       // MM/DD format
       draw_small_digit(ctx, mo1, col, date_row, true);
@@ -488,6 +504,25 @@ static void update_time(void) {
   uint8_t new_minute = (uint8_t)t->tm_min;
   s_day = (uint8_t)t->tm_mday;
   s_month = (uint8_t)(t->tm_mon + 1);
+  
+  // ISO 8601 week calculation
+  // Week 1 is the week with the first Thursday of the year
+  int day_of_week = t->tm_wday == 0 ? 7 : t->tm_wday; // Monday=1, Sunday=7
+  int day_of_year = t->tm_yday + 1; // Make 1-indexed
+  int week_number = (day_of_year - day_of_week + 10) / 7;
+  
+  if (week_number == 0) {
+    // This day belongs to the last week of the previous year
+    week_number = 52; // Simplified - could be 53 in some years
+  } else if (week_number == 53) {
+    // Check if this really belongs to week 1 of next year
+    int jan1_day = (day_of_week - day_of_year % 7 + 7) % 7;
+    if (jan1_day >= 1 && jan1_day <= 3) {
+      week_number = 1;
+    }
+  }
+  
+  s_week = (uint8_t)week_number;
   
   if (!s_flags.use_24h) {
     new_hour = new_hour % 12;
@@ -576,7 +611,7 @@ static void load_settings(void) {
     s_flags.use_24h = persist_read_bool(PERSIST_KEY_USE_24H);
   }
   if (persist_exists(PERSIST_KEY_DATE_FORMAT)) {
-    s_flags.date_format_ddmm = persist_read_bool(PERSIST_KEY_DATE_FORMAT);
+    s_flags.date_format = (uint8_t)persist_read_int(PERSIST_KEY_DATE_FORMAT);
   }
   if (persist_exists(PERSIST_KEY_LOAD_ANIMATION)) {
     s_load_animation = (uint8_t)persist_read_int(PERSIST_KEY_LOAD_ANIMATION);
@@ -593,7 +628,7 @@ static void save_settings(void) {
   persist_write_bool(PERSIST_KEY_SHOW_BATTERY, s_flags.show_battery);
   persist_write_bool(PERSIST_KEY_SHOW_DATE, s_flags.show_date);
   persist_write_bool(PERSIST_KEY_USE_24H, s_flags.use_24h);
-  persist_write_bool(PERSIST_KEY_DATE_FORMAT, s_flags.date_format_ddmm);
+  persist_write_int(PERSIST_KEY_DATE_FORMAT, s_flags.date_format);
   persist_write_int(PERSIST_KEY_LOAD_ANIMATION, s_load_animation);
 }
 
@@ -652,8 +687,14 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   // Date format
   Tuple *date_fmt_t = dict_find(iter, MESSAGE_KEY_DateFormat);
   if (date_fmt_t) {
-    // Compare string value: "DDMM" = true, "MMDD" = false
-    s_flags.date_format_ddmm = strcmp(date_fmt_t->value->cstring, "DDMM") == 0;
+    // Compare string value: "MMDD" = 0, "DDMM" = 1, "WWDD" = 2
+    if (strcmp(date_fmt_t->value->cstring, "DDMM") == 0) {
+      s_flags.date_format = 1;
+    } else if (strcmp(date_fmt_t->value->cstring, "WWDD") == 0) {
+      s_flags.date_format = 2;
+    } else {
+      s_flags.date_format = 0;  // MMDD
+    }
   }
   
   // Load animation

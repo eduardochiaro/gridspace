@@ -101,6 +101,10 @@
           {
             "label": "MM/DD (Month/Day)",
             "value": "MMDD"
+          },
+          {
+            "label": "WW/DD (Week/Day)",
+            "value": "WWDD"
           }
         ]
       },

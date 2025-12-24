@@ -8,9 +8,9 @@ A minimalist Pebble watchface with a distinctive pixel-grid aesthetic. Every ele
 ![Aplite 2](assets/aplite_2.png)
 
 ### Pebble Time/Time Steel
+![Basalt animation](assets/basalt_3.gif)
 ![Basalt 1](assets/basalt_1.png)
 ![Basalt 2](assets/basalt_2.png)
-![Basalt 3](assets/basalt_3.png)
 
 ### Pebble Time Round
 ![Chalk 1](assets/chalk_1.png)
@@ -55,7 +55,7 @@ Access settings through the Pebble app:
 - **Step Goal**: Set target steps (1,000 - 50,000, default: 8,000)
 - **Display Toggles**: Show/hide steps, battery, and date
 - **Time Format**: 12-hour or 24-hour display
-- **Date Format**: DD/MM or MM/DD
+- **Date Format**: DD/MM, MM/DD or WW/DD
 - **Load Animation**: Pick a load animation: None, Wave Fill, Random Pop, Matrix
 
 ## Platform Support
