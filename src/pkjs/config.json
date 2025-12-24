@@ -105,6 +105,10 @@
           {
             "label": "WW/DD (Week/Day)",
             "value": "WWDD"
+          },
+          {
+            "label": "WD/DD (Weekday/Day)",
+            "value": "WDDD"
           }
         ]
       },
