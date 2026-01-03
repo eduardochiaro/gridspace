@@ -12,7 +12,7 @@
       },
       {
         "type": "color",
-        "messageKey": "BackgroundColor",
+        "messageKey": "BACKGROUND_COLOR",
         "defaultValue": "000000",
         "label": "Background Color",
         "sunlight": true,
@@ -20,7 +20,7 @@
       },
       {
         "type": "color",
-        "messageKey": "ForegroundColor",
+        "messageKey": "FOREGROUND_COLOR",
         "defaultValue": "FFFFFF",
         "label": "Foreground Color",
         "sunlight": true,
@@ -28,7 +28,7 @@
       },
       {
         "type": "color",
-        "messageKey": "SecondaryColor",
+        "messageKey": "SECONDARY_COLOR",
         "defaultValue": "AAAAAA",
         "label": "Secondary Color (gray elements)",
         "sunlight": true,
@@ -45,13 +45,13 @@
       },
       {
         "type": "toggle",
-        "messageKey": "ShowSteps",
+        "messageKey": "SHOW_STEPS",
         "defaultValue": true,
         "label": "Show Step Bar"
       },
       {
         "type": "input",
-        "messageKey": "StepGoal",
+        "messageKey": "STEP_GOAL",
         "defaultValue": "8000",
         "label": "Daily Step Goal",
         "attributes": {
@@ -72,49 +72,25 @@
       },
       {
         "type": "toggle",
-        "messageKey": "ShowBattery",
+        "messageKey": "SHOW_BATTERY",
         "defaultValue": true,
         "label": "Show Battery Indicator"
       },
       {
         "type": "toggle",
-        "messageKey": "ShowDate",
+        "messageKey": "SHOW_DATE",
         "defaultValue": true,
         "label": "Show Date"
       },
       {
         "type": "toggle",
-        "messageKey": "Use24Hour",
+        "messageKey": "USE_24_HOUR",
         "defaultValue": true,
         "label": "Use 24-Hour Format"
       },
       {
         "type": "select",
-        "messageKey": "DateFormat",
-        "defaultValue": "DDMM",
-        "label": "Date Format",
-        "options": [
-          {
-            "label": "DD/MM (Day/Month)",
-            "value": "DDMM"
-          },
-          {
-            "label": "MM/DD (Month/Day)",
-            "value": "MMDD"
-          },
-          {
-            "label": "WW/DD (Week/Day)",
-            "value": "WWDD"
-          },
-          {
-            "label": "WD/DD (Weekday/Day)",
-            "value": "WDDD"
-          }
-        ]
-      },
-      {
-        "type": "select",
-        "messageKey": "LoadAnimation",
+        "messageKey": "LOAD_ANIMATION",
         "defaultValue": "2",
         "label": "Load Animation",
         "options": [
@@ -133,6 +109,86 @@
           {
             "label": "Matrix",
             "value": "3"
+          }
+        ]
+      }
+    ]
+  },
+
+  {
+    "type": "section",
+    "items": [
+      {
+        "type": "heading",
+        "defaultValue": "Date Line"
+      },
+      {
+        "type": "toggle",
+        "messageKey": "SHOW_DATE",
+        "defaultValue": true,
+        "label": "Show Date Line"
+      },
+      {
+        "type": "select",
+        "messageKey": "DATE_LEFT",
+        "defaultValue": "3",
+        "label": "Date Left Side",
+        "options": [
+          {
+            "label": "Month Name (2 letters)",
+            "value": "0"
+          },
+          {
+            "label": "Week Day (2 letters)",
+            "value": "1"
+          },
+          {
+            "label": "Week of the Year",
+            "value": "2"
+          },
+          {
+            "label": "Day",
+            "value": "3"
+          },
+          {
+            "label": "Month (number)",
+            "value": "4"
+          },
+          {
+            "label": "Year (last 2 digits)",
+            "value": "5"
+          }
+        ]
+      },
+      {
+        "type": "select",
+        "messageKey": "DATE_RIGHT",
+        "defaultValue": "4",
+        "label": "Date Right Side",
+        "options": [
+          {
+            "label": "Month Name (2 letters)",
+            "value": "0"
+          },
+          {
+            "label": "Week Day (2 letters)",
+            "value": "1"
+          },
+          {
+            "label": "Week of the Year",
+            "value": "2"
+          },
+          {
+            "label": "Day",
+            "value": "3"
+          },
+          {
+            "label": "Month (number)",
+            "value": "4"
+          },
+          {
+            "label": "Year (last 2 digits)",
+            "value": "5"
           }
         ]
       }
