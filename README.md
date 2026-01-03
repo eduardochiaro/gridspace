@@ -34,7 +34,7 @@ A minimalist Pebble watchface with a distinctive pixel-grid aesthetic. Every ele
 ### Display Elements
 
 - **Large Time Display**: Bold 5×7 digit patterns with customizable 12/24-hour format
-- **Date Display**: Compact 3×5 digits below time with DD/MM or MM/DD format options
+- **Date Display**: Compact 3×5 digits below time with fully customizable left/right components
 - **Step Tracker**: 5×15 diagonal progress bar showing daily step goal (requires health service)
 - **Battery Indicator**: 2×3 grid showing battery level with top-down drain visualization 
 
@@ -55,16 +55,22 @@ Access settings through the Pebble app:
 - **Step Goal**: Set target steps (1,000 - 50,000, default: 8,000)
 - **Display Toggles**: Show/hide steps, battery, and date
 - **Time Format**: 12-hour or 24-hour display
-- **Date Format**: DD/MM, MM/DD or WW/DD
+- **Date Format**: Customize left and right sides independently with these options:
+  - Month Name (2 letters: JA, FE, MR, AP, MY, JN, JL, AU, SE, OC, NO, DE)
+  - Week Day (2 letters: MO, TU, WE, TH, FR, SA, SU)
+  - Week of the Year (01-52)
+  - Day (01-31)
+  - Month number (01-12)
+  - Year (last 2 digits)
 - **Load Animation**: Pick a load animation: None, Wave Fill, Random Pop, Matrix
 
 ## Platform Support
 
-- ✅ Aplite (144×168 B&W)
-- ✅ Basalt (144×168 color)
-- ✅ Chalk (180×180 round color)
-- ✅ Diorite (144×168 B&W)
-- ✅ Emery (200×228 color, enhanced 6×6 cells)
+- Aplite (144×168 B&W)
+- Basalt (144×168 color)
+- Chalk (180×180 round color)
+- Diorite (144×168 B&W)
+- Emery (200×228 color, enhanced 6×6 cells)
 
 ## License
 

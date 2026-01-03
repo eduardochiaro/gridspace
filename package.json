@@ -1,7 +1,7 @@
 {
   "name": "gridspace",
   "author": "Eduardo Chiaro",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "keywords": [
     "pebble-app",
     "watchface",
@@ -32,16 +32,17 @@
       "watchface": true
     },
     "messageKeys": [
-      "BackgroundColor",
-      "ForegroundColor",
-      "SecondaryColor",
-      "StepGoal",
-      "ShowSteps",
-      "ShowBattery",
-      "ShowDate",
-      "Use24Hour",
-      "DateFormat",
-      "LoadAnimation"
+      "BACKGROUND_COLOR",
+      "FOREGROUND_COLOR",
+      "SECONDARY_COLOR",
+      "STEP_GOAL",
+      "SHOW_STEPS",
+      "SHOW_BATTERY",
+      "SHOW_DATE",
+      "USE_24_HOUR",
+      "DATE_LEFT",
+      "DATE_RIGHT",
+      "LOAD_ANIMATION"
     ],
     "resources": {
       "media": [

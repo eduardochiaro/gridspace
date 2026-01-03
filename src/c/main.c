@@ -32,7 +32,7 @@ static int s_grid_offset_x;
 static int s_grid_offset_y;
 
 // Cached time values (updated once per minute)
-static uint8_t s_hour, s_minute, s_day, s_month, s_week, s_weekday;
+static uint8_t s_hour, s_minute, s_day, s_month, s_week, s_weekday, s_year;
 static int8_t s_prev_hour = -1, s_prev_minute = -1;
 
 // Animation constants
@@ -62,16 +62,16 @@ static struct {
   uint8_t show_battery:1;
   uint8_t show_date:1;
   uint8_t use_24h:1;
-  uint8_t date_format:2;  // 0=MMDD, 1=DDMM, 2=WWDD, 3=WDDD (weekday/day)
-  uint8_t reserved:1;  // For future use
+  uint8_t date_left:3;   // 0=MonthName, 1=WeekDay, 2=WeekNum, 3=Day, 4=Month, 5=Year
+  uint8_t date_right:3;  // 0=MonthName, 1=WeekDay, 2=WeekNum, 3=Day, 4=Month, 5=Year
 } s_flags = {
   .health_available = 0,
   .show_steps = 1,
   .show_battery = 1,
   .show_date = 1,
   .use_24h = 1,
-  .date_format = 1,
-  .reserved = 0
+  .date_left = 3,   // Day
+  .date_right = 4   // Month
 };
 
 // Color settings (3 bytes each = 9 bytes total)
@@ -88,8 +88,9 @@ static GColor s_secondary_color;
 #define PERSIST_KEY_SHOW_BATTERY 6
 #define PERSIST_KEY_SHOW_DATE 7
 #define PERSIST_KEY_USE_24H 8
-#define PERSIST_KEY_DATE_FORMAT 9
-#define PERSIST_KEY_LOAD_ANIMATION 10
+#define PERSIST_KEY_DATE_LEFT 9
+#define PERSIST_KEY_DATE_RIGHT 10
+#define PERSIST_KEY_LOAD_ANIMATION 11
 
 // Small digit patterns (3x5 for each digit 0-9) - using only full cells
 static const uint8_t small_digit_patterns[10][15] = {
@@ -105,20 +106,28 @@ static const uint8_t small_digit_patterns[10][15] = {
   {2,2,2, 2,0,2, 2,2,2, 0,0,2, 2,2,2}  // 9
 };
 
-// Small letter patterns (3x5) for weekday names
-// Letters: M, O, T, U, W, E, H, F, R, S, A
-static const uint8_t small_letter_patterns[11][15] = {
-  {2,0,2, 2,2,2, 2,2,2, 2,0,2, 2,0,2}, // M
-  {2,2,2, 2,0,2, 2,0,2, 2,0,2, 2,2,2}, // O
-  {2,2,2, 0,2,0, 0,2,0, 0,2,0, 0,2,0}, // T
-  {2,0,2, 2,0,2, 2,0,2, 2,0,2, 2,2,2}, // U
-  {2,0,2, 2,0,2, 2,2,2, 2,2,2, 2,0,2}, // W
-  {2,2,2, 2,0,0, 2,2,2, 2,0,0, 2,2,2}, // E
-  {2,0,2, 2,0,2, 2,2,2, 2,0,2, 2,0,2}, // H
-  {2,2,2, 2,0,0, 2,2,2, 2,0,0, 2,0,0}, // F
-  {2,2,2, 2,0,2, 2,2,2, 2,2,0, 2,0,2}, // R
-  {2,2,2, 2,0,0, 2,2,2, 0,0,2, 2,2,2}, // S
-  {2,2,2, 2,0,2, 2,2,2, 2,0,2, 2,0,2}  // A
+// Small letter patterns (3x5) for weekday and month names
+// Letters: M, O, T, U, W, E, H, F, R, S, A, J, P, G, C, N, D, Y, L
+static const uint8_t small_letter_patterns[19][15] = {
+  {2,0,2, 2,2,2, 2,2,2, 2,0,2, 2,0,2}, // M  0
+  {2,2,2, 2,0,2, 2,0,2, 2,0,2, 2,2,2}, // O  1
+  {2,2,2, 0,2,0, 0,2,0, 0,2,0, 0,2,0}, // T  2
+  {2,0,2, 2,0,2, 2,0,2, 2,0,2, 2,2,2}, // U  3
+  {2,0,2, 2,0,2, 2,2,2, 2,2,2, 2,0,2}, // W  4
+  {2,2,2, 2,0,0, 2,2,2, 2,0,0, 2,2,2}, // E  5
+  {2,0,2, 2,0,2, 2,2,2, 2,0,2, 2,0,2}, // H  6
+  {2,2,2, 2,0,0, 2,2,2, 2,0,0, 2,0,0}, // F  7
+  {2,2,2, 2,0,2, 2,2,2, 2,2,0, 2,0,2}, // R  8
+  {2,2,2, 2,0,0, 2,2,2, 0,0,2, 2,2,2}, // S  9
+  {2,2,2, 2,0,2, 2,2,2, 2,0,2, 2,0,2}, // A  10
+  {0,0,2, 0,0,2, 0,0,2, 2,0,2, 2,2,2}, // J  11
+  {2,2,2, 2,0,2, 2,2,2, 2,0,0, 2,0,0}, // P  12
+  {2,2,2, 2,0,0, 2,0,2, 2,0,2, 2,2,2}, // G  13
+  {2,2,2, 2,0,0, 2,0,0, 2,0,0, 2,2,2}, // C  14
+  {2,0,2, 2,2,2, 2,2,2, 2,0,2, 2,0,2}, // N  15
+  {2,2,0, 2,0,2, 2,0,2, 2,0,2, 2,2,0}, // D  16
+  {2,0,2, 2,0,2, 0,2,0, 0,2,0, 0,2,0}, // Y  17
+  {2,0,0, 2,0,0, 2,0,0, 2,0,0, 2,2,2}  // L  18
 };
 
 // Weekday letter indices: [day][letter] where day: 0=Mon, 1=Tue, 2=Wed, 3=Thu, 4=Fri, 5=Sat, 6=Sun
@@ -131,6 +140,23 @@ static const uint8_t weekday_letters[7][2] = {
   {7, 8},  // FR - Friday
   {9, 10}, // SA - Saturday
   {9, 3}   // SU - Sunday
+};
+
+// Month letter indices: [month][letter] where month: 0=Jan, 1=Feb, ..., 11=Dec
+// Using unique 2-letter codes: JA, FE, MR, AP, MY, JN, JL, AU, SE, OC, NO, DE
+static const uint8_t month_letters[12][2] = {
+  {11, 10}, // JA - January
+  {7, 5},   // FE - February
+  {0, 8},   // MR - March
+  {10, 12}, // AP - April
+  {0, 17},  // MY - May
+  {11, 15}, // JN - June
+  {11, 18}, // JL - July
+  {10, 3},  // AU - August
+  {9, 5},   // SE - September
+  {1, 14},  // OC - October
+  {15, 1},  // NO - November
+  {16, 5}   // DE - December
 };
 
 // Digit patterns (5x7 for each digit 0-9)
@@ -261,9 +287,9 @@ static void draw_small_digit(GContext *ctx, int digit, int col, int row, bool us
   }
 }
 
-// Draw a small letter directly (for weekday names)
+// Draw a small letter directly (for weekday and month names)
 static void draw_small_letter(GContext *ctx, int letter_index, int col, int row, bool use_gray) {
-  if (letter_index < 0 || letter_index > 10) return;
+  if (letter_index < 0 || letter_index > 18) return;
   const uint8_t *pattern = small_letter_patterns[letter_index];
   
   for (int r = 0; r < 5; r++) {
@@ -470,59 +496,52 @@ static void canvas_update_proc(Layer *layer, GContext *ctx) {
   
   // Date digits (if enabled)
   if (s_flags.show_date) {
-    int d1 = s_day / 10;
-    int d2 = s_day % 10;
-    int mo1 = s_month / 10;
-    int mo2 = s_month % 10;
-    int w1 = s_week / 10;
-    int w2 = s_week % 10;
-    
     col = date_col;
     
-    if (s_flags.date_format == 1) {
-      // DD/MM format
-      draw_small_digit(ctx, d1, col, date_row, true);
+    // Helper to draw a date component based on type
+    // 0=MonthName, 1=WeekDay, 2=WeekNum, 3=Day, 4=Month, 5=Year
+    for (int side = 0; side < 2; side++) {
+      uint8_t date_type = (side == 0) ? s_flags.date_left : s_flags.date_right;
+      
+      switch (date_type) {
+        case 0: // Month Name (2 letters)
+          draw_small_letter(ctx, month_letters[s_month - 1][0], col, date_row, true);
+          col += 3 + small_spacing;
+          draw_small_letter(ctx, month_letters[s_month - 1][1], col, date_row, true);
+          break;
+        case 1: // Week Day (2 letters)
+          draw_small_letter(ctx, weekday_letters[s_weekday][0], col, date_row, true);
+          col += 3 + small_spacing;
+          draw_small_letter(ctx, weekday_letters[s_weekday][1], col, date_row, true);
+          break;
+        case 2: // Week of the Year
+          draw_small_digit(ctx, s_week / 10, col, date_row, true);
+          col += 3 + small_spacing;
+          draw_small_digit(ctx, s_week % 10, col, date_row, true);
+          break;
+        case 3: // Day
+          draw_small_digit(ctx, s_day / 10, col, date_row, true);
+          col += 3 + small_spacing;
+          draw_small_digit(ctx, s_day % 10, col, date_row, true);
+          break;
+        case 4: // Month (number)
+          draw_small_digit(ctx, s_month / 10, col, date_row, true);
+          col += 3 + small_spacing;
+          draw_small_digit(ctx, s_month % 10, col, date_row, true);
+          break;
+        case 5: // Year (last 2 digits)
+          draw_small_digit(ctx, s_year / 10, col, date_row, true);
+          col += 3 + small_spacing;
+          draw_small_digit(ctx, s_year % 10, col, date_row, true);
+          break;
+      }
       col += 3 + small_spacing;
-      draw_small_digit(ctx, d2, col, date_row, true);
-      col += 3 + small_spacing;
-      draw_separator(ctx, col, date_row, true);
-      col += 2 + small_spacing;  // Separator is now 2 cols wide
-      draw_small_digit(ctx, mo1, col, date_row, true);
-      col += 3 + small_spacing;
-      draw_small_digit(ctx, mo2, col, date_row, true);
-    } else if (s_flags.date_format == 2) {
-      // WW/DD format (Week/Day)
-      draw_small_digit(ctx, w1, col, date_row, true);
-      col += 3 + small_spacing;
-      draw_small_digit(ctx, w2, col, date_row, true);
-      col += 3 + small_spacing;
-      draw_separator(ctx, col, date_row, true);
-      col += 2 + small_spacing;  // Separator is now 2 cols wide
-      draw_small_digit(ctx, d1, col, date_row, true);
-      col += 3 + small_spacing;
-      draw_small_digit(ctx, d2, col, date_row, true);
-    } else if (s_flags.date_format == 3) {
-      // WD/DD format (Weekday/Day) - e.g., MO/24
-      draw_small_letter(ctx, weekday_letters[s_weekday][0], col, date_row, true);
-      col += 3 + small_spacing;
-      draw_small_letter(ctx, weekday_letters[s_weekday][1], col, date_row, true);
-      col += 3 + small_spacing;
-      draw_separator(ctx, col, date_row, true);
-      col += 2 + small_spacing;  // Separator is now 2 cols wide
-      draw_small_digit(ctx, d1, col, date_row, true);
-      col += 3 + small_spacing;
-      draw_small_digit(ctx, d2, col, date_row, true);
-    } else {
-      // MM/DD format
-      draw_small_digit(ctx, mo1, col, date_row, true);
-      col += 3 + small_spacing;
-      draw_small_digit(ctx, mo2, col, date_row, true);
-      col += 3 + small_spacing;
-      draw_separator(ctx, col, date_row, true);
-      col += 2 + small_spacing;  // Separator is now 2 cols wide
-      draw_small_digit(ctx, d1, col, date_row, true);
-      col += 3 + small_spacing;
-      draw_small_digit(ctx, d2, col, date_row, true);
+      
+      // Draw separator after left side
+      if (side == 0) {
+        draw_separator(ctx, col, date_row, true);
+        col += 2 + small_spacing;
+      }
     }
   }
   
@@ -560,6 +579,7 @@ static void update_time(void) {
   uint8_t new_minute = (uint8_t)t->tm_min;
   s_day = (uint8_t)t->tm_mday;
   s_month = (uint8_t)(t->tm_mon + 1);
+  s_year = (uint8_t)(t->tm_year % 100);  // Last 2 digits of year
   
   // ISO 8601 week calculation
   // Week 1 is the week with the first Thursday of the year
@@ -669,8 +689,11 @@ static void load_settings(void) {
   if (persist_exists(PERSIST_KEY_USE_24H)) {
     s_flags.use_24h = persist_read_bool(PERSIST_KEY_USE_24H);
   }
-  if (persist_exists(PERSIST_KEY_DATE_FORMAT)) {
-    s_flags.date_format = (uint8_t)persist_read_int(PERSIST_KEY_DATE_FORMAT);
+  if (persist_exists(PERSIST_KEY_DATE_LEFT)) {
+    s_flags.date_left = (uint8_t)persist_read_int(PERSIST_KEY_DATE_LEFT);
+  }
+  if (persist_exists(PERSIST_KEY_DATE_RIGHT)) {
+    s_flags.date_right = (uint8_t)persist_read_int(PERSIST_KEY_DATE_RIGHT);
   }
   if (persist_exists(PERSIST_KEY_LOAD_ANIMATION)) {
     s_load_animation = (uint8_t)persist_read_int(PERSIST_KEY_LOAD_ANIMATION);
@@ -687,32 +710,33 @@ static void save_settings(void) {
   persist_write_bool(PERSIST_KEY_SHOW_BATTERY, s_flags.show_battery);
   persist_write_bool(PERSIST_KEY_SHOW_DATE, s_flags.show_date);
   persist_write_bool(PERSIST_KEY_USE_24H, s_flags.use_24h);
-  persist_write_int(PERSIST_KEY_DATE_FORMAT, s_flags.date_format);
+  persist_write_int(PERSIST_KEY_DATE_LEFT, s_flags.date_left);
+  persist_write_int(PERSIST_KEY_DATE_RIGHT, s_flags.date_right);
   persist_write_int(PERSIST_KEY_LOAD_ANIMATION, s_load_animation);
 }
 
 // AppMessage inbox received handler
 static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   // Background color
-  Tuple *bg_t = dict_find(iter, MESSAGE_KEY_BackgroundColor);
+  Tuple *bg_t = dict_find(iter, MESSAGE_KEY_BACKGROUND_COLOR);
   if (bg_t) {
     s_bg_color = GColorFromHEX(bg_t->value->int32);
   }
   
   // Foreground color
-  Tuple *fg_t = dict_find(iter, MESSAGE_KEY_ForegroundColor);
+  Tuple *fg_t = dict_find(iter, MESSAGE_KEY_FOREGROUND_COLOR);
   if (fg_t) {
     s_fg_color = GColorFromHEX(fg_t->value->int32);
   }
   
   // Secondary color
-  Tuple *sec_t = dict_find(iter, MESSAGE_KEY_SecondaryColor);
+  Tuple *sec_t = dict_find(iter, MESSAGE_KEY_SECONDARY_COLOR);
   if (sec_t) {
     s_secondary_color = GColorFromHEX(sec_t->value->int32);
   }
   
   // Step goal
-  Tuple *goal_t = dict_find(iter, MESSAGE_KEY_StepGoal);
+  Tuple *goal_t = dict_find(iter, MESSAGE_KEY_STEP_GOAL);
   if (goal_t) {
     s_step_goal = atoi(goal_t->value->cstring);
     if (s_step_goal < 1000) s_step_goal = 1000;
@@ -720,46 +744,45 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   }
   
   // Show steps
-  Tuple *steps_t = dict_find(iter, MESSAGE_KEY_ShowSteps);
+  Tuple *steps_t = dict_find(iter, MESSAGE_KEY_SHOW_STEPS);
   if (steps_t) {
     s_flags.show_steps = steps_t->value->int32 == 1;
   }
   
   // Show battery
-  Tuple *batt_t = dict_find(iter, MESSAGE_KEY_ShowBattery);
+  Tuple *batt_t = dict_find(iter, MESSAGE_KEY_SHOW_BATTERY);
   if (batt_t) {
     s_flags.show_battery = batt_t->value->int32 == 1;
   }
   
   // Show date
-  Tuple *date_t = dict_find(iter, MESSAGE_KEY_ShowDate);
+  Tuple *date_t = dict_find(iter, MESSAGE_KEY_SHOW_DATE);
   if (date_t) {
     s_flags.show_date = date_t->value->int32 == 1;
   }
   
   // Use 24-hour format
-  Tuple *hour_t = dict_find(iter, MESSAGE_KEY_Use24Hour);
+  Tuple *hour_t = dict_find(iter, MESSAGE_KEY_USE_24_HOUR);
   if (hour_t) {
     s_flags.use_24h = hour_t->value->int32 == 1;
   }
   
-  // Date format
-  Tuple *date_fmt_t = dict_find(iter, MESSAGE_KEY_DateFormat);
-  if (date_fmt_t) {
-    // Compare string value: "MMDD" = 0, "DDMM" = 1, "WWDD" = 2, "WDDD" = 3
-    if (strcmp(date_fmt_t->value->cstring, "DDMM") == 0) {
-      s_flags.date_format = 1;
-    } else if (strcmp(date_fmt_t->value->cstring, "WWDD") == 0) {
-      s_flags.date_format = 2;
-    } else if (strcmp(date_fmt_t->value->cstring, "WDDD") == 0) {
-      s_flags.date_format = 3;
-    } else {
-      s_flags.date_format = 0;  // MMDD
-    }
+  // Date left side
+  Tuple *date_left_t = dict_find(iter, MESSAGE_KEY_DATE_LEFT);
+  if (date_left_t) {
+    int val = atoi(date_left_t->value->cstring);
+    if (val >= 0 && val <= 5) s_flags.date_left = (uint8_t)val;
+  }
+  
+  // Date right side
+  Tuple *date_right_t = dict_find(iter, MESSAGE_KEY_DATE_RIGHT);
+  if (date_right_t) {
+    int val = atoi(date_right_t->value->cstring);
+    if (val >= 0 && val <= 5) s_flags.date_right = (uint8_t)val;
   }
   
   // Load animation
-  Tuple *anim_t = dict_find(iter, MESSAGE_KEY_LoadAnimation);
+  Tuple *anim_t = dict_find(iter, MESSAGE_KEY_LOAD_ANIMATION);
   if (anim_t) {
     int anim_val = atoi(anim_t->value->cstring);
     if (anim_val < 0) anim_val = 0;
