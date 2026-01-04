@@ -44,7 +44,8 @@
       "DATE_RIGHT",
       "LOAD_ANIMATION",
       "SHOW_WEATHER",
-      "WEATHER_TEMPERATURE"
+      "WEATHER_TEMPERATURE",
+      "WEATHER_UNIT"
     ],
     "resources": {
       "media": [

@@ -54,6 +54,7 @@ static uint16_t s_steps = 0;
 static uint8_t s_battery_level = 0;
 static uint16_t s_step_goal = 8000;
 static uint8_t s_load_animation = 2;
+static int16_t s_weather_temp = 0;  // Temperature in Celsius
 
 // Packed boolean flags (saves memory)
 static struct {
@@ -63,6 +64,7 @@ static struct {
   uint8_t show_date:1;
   uint8_t use_24h:1;
   uint8_t show_weather:1;
+  uint8_t weather_use_fahrenheit:1;
   uint8_t date_left:3;   // 0=MonthName, 1=WeekDay, 2=WeekNum, 3=Day, 4=Month, 5=Year
   uint8_t date_right:3;  // 0=MonthName, 1=WeekDay, 2=WeekNum, 3=Day, 4=Month, 5=Year
 } s_flags = {
@@ -72,6 +74,7 @@ static struct {
   .show_date = 1,
   .use_24h = 1,
   .show_weather = 0,
+  .weather_use_fahrenheit = 0,
   .date_left = 3,   // Day
   .date_right = 4   // Month
 };
@@ -94,6 +97,7 @@ static GColor s_secondary_color;
 #define PERSIST_KEY_DATE_RIGHT 10
 #define PERSIST_KEY_LOAD_ANIMATION 11
 #define PERSIST_KEY_SHOW_WEATHER 12
+#define PERSIST_KEY_WEATHER_UNIT 13
 
 // Small digit patterns (3x5 for each digit 0-9) - using only full cells
 static const uint8_t small_digit_patterns[10][15] = {
@@ -508,7 +512,15 @@ static void canvas_update_proc(Layer *layer, GContext *ctx) {
     int weather_col = 5;  // 5 grid spaces from left
     int weather_width = s_grid_cols - 10;  // 5 from each side
     int weather_height = step_row - weather_row - 2;  // 2 grid spaces padding from step tracker
-    draw_weather(ctx, weather_col, weather_row, weather_width, weather_height, -5, true);  // Test: 104°F
+    
+    // Convert temperature if needed (data is always in Celsius)
+    int display_temp = s_weather_temp;
+    if (s_flags.weather_use_fahrenheit) {
+      // Convert C to F: (C * 9/5) + 32
+      display_temp = (s_weather_temp * 9 / 5) + 32;
+    }
+    
+    draw_weather(ctx, weather_col, weather_row, weather_width, weather_height, display_temp, !s_flags.weather_use_fahrenheit);
   }
   
   // Step bar (above time, aligned with left side of time)
@@ -773,6 +785,9 @@ static void load_settings(void) {
   if (persist_exists(PERSIST_KEY_SHOW_WEATHER)) {
     s_flags.show_weather = persist_read_bool(PERSIST_KEY_SHOW_WEATHER);
   }
+  if (persist_exists(PERSIST_KEY_WEATHER_UNIT)) {
+    s_flags.weather_use_fahrenheit = persist_read_bool(PERSIST_KEY_WEATHER_UNIT);
+  }
 }
 
 // Save settings to persistent storage
@@ -789,6 +804,7 @@ static void save_settings(void) {
   persist_write_int(PERSIST_KEY_DATE_RIGHT, s_flags.date_right);
   persist_write_int(PERSIST_KEY_LOAD_ANIMATION, s_load_animation);
   persist_write_bool(PERSIST_KEY_SHOW_WEATHER, s_flags.show_weather);
+  persist_write_bool(PERSIST_KEY_WEATHER_UNIT, s_flags.weather_use_fahrenheit);
 }
 
 // AppMessage inbox received handler
@@ -870,6 +886,18 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   Tuple *weather_t = dict_find(iter, MESSAGE_KEY_SHOW_WEATHER);
   if (weather_t) {
     s_flags.show_weather = weather_t->value->int32 == 1;
+  }
+  
+  // Weather temperature (always in Celsius)
+  Tuple *temp_t = dict_find(iter, MESSAGE_KEY_WEATHER_TEMPERATURE);
+  if (temp_t) {
+    s_weather_temp = (int16_t)temp_t->value->int32;
+  }
+  
+  // Weather unit (C or F)
+  Tuple *unit_t = dict_find(iter, MESSAGE_KEY_WEATHER_UNIT);
+  if (unit_t) {
+    s_flags.weather_use_fahrenheit = (strcmp(unit_t->value->cstring, "F") == 0);
   }
   
   // Save and update
