@@ -3,11 +3,8 @@ var Clay = require('@rebble/clay');
 var clayConfig = require('./config.json');
 var clay = new Clay(clayConfig);
 
-
 // Weather functionality
 var lastWeatherData = null; // Store last weather data
-var weatherEnabled = false; // Track if weather module is enabled
-var weatherInterval = null; // Store interval ID for weather updates
 
 function getLocation(successCallback, errorCallback) {
   navigator.geolocation.getCurrentPosition(
@@ -115,19 +112,10 @@ function updateWeather() {
 // Update weather on app start and every 30 minutes
 Pebble.addEventListener('ready', function() {
   console.log('PebbleKit JS ready!');
+  updateWeather();
   
-  // Read stored weather setting (default to false)
-  weatherEnabled = localStorage.getItem('SHOW_WEATHER') === 'true';
-  
-  if (weatherEnabled) {
-    console.log('Weather module enabled - starting updates');
-    updateWeather();
-    
-    // Update weather every 30 minutes
-    weatherInterval = setInterval(updateWeather, 30 * 60 * 1000);
-  } else {
-    console.log('Weather module disabled - skipping updates');
-  }
+  // Update weather every 30 minutes
+  setInterval(updateWeather, 30 * 60 * 1000);
 });
 
 // Listen for Clay configuration changes
@@ -139,38 +127,12 @@ Pebble.addEventListener('webviewclosed', function(e) {
   var claySettings = clay.getSettings(e.response);
   console.log('Configuration received: ' + JSON.stringify(claySettings));
   
-  // Check if weather module setting changed
-  var newWeatherEnabled = claySettings.SHOW_WEATHER === true || claySettings.SHOW_WEATHER === 1;
-  
-  // Store the setting
-  localStorage.setItem('SHOW_WEATHER', newWeatherEnabled.toString());
-  
-  // Handle weather updates based on setting
-  if (newWeatherEnabled && !weatherEnabled) {
-    // Weather was just enabled - start updates
-    console.log('Weather module enabled - starting updates');
-    weatherEnabled = true;
-    updateWeather();
-    if (weatherInterval) {
-      clearInterval(weatherInterval);
-    }
-    weatherInterval = setInterval(updateWeather, 30 * 60 * 1000);
-  } else if (!newWeatherEnabled && weatherEnabled) {
-    // Weather was just disabled - stop updates
-    console.log('Weather module disabled - stopping updates');
-    weatherEnabled = false;
-    if (weatherInterval) {
-      clearInterval(weatherInterval);
-      weatherInterval = null;
-    }
-  } else if (newWeatherEnabled && weatherEnabled) {
-    // Weather still enabled - send cached data if available
-    if (lastWeatherData) {
-      console.log('Sending cached weather data to watch');
-      Pebble.sendAppMessage({
-        'WEATHER_TEMPERATURE': lastWeatherData.tempCelsius,
-      });
-    }
+  // Send cached weather data if available (C code will handle conversion)
+  if (lastWeatherData) {
+    console.log('Sending cached weather data to watch');
+    Pebble.sendAppMessage({
+      'WEATHER_TEMPERATURE': lastWeatherData.tempCelsius,
+    });
   }
   
   // Send all configuration to watch
