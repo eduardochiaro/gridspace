@@ -56,12 +56,12 @@ Access settings through the Pebble app:
 - **Display Toggles**: Show/hide steps, battery, and date
 - **Time Format**: 12-hour or 24-hour display
 - **Date Format**: Customize left and right sides independently with these options:
-  - Month Name (2 letters: JA, FE, MR, AP, MY, JN, JL, AU, SE, OC, NO, DE)
-  - Week Day (2 letters: MO, TU, WE, TH, FR, SA, SU)
-  - Week of the Year (01-52)
-  - Day (01-31)
-  - Month number (01-12)
-  - Year (last 2 digits)
+  - Month Name
+  - Week Day 
+  - Week of the Year
+  - Day
+  - Month number
+  - Year
 - **Load Animation**: Pick a load animation: None, Wave Fill, Random Pop, Matrix
 
 ## Platform Support
