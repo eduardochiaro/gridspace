@@ -195,6 +195,21 @@
     ]
   },
   {
+    "type": "section",
+    "items": [
+      {
+        "type": "heading",
+        "defaultValue": "Weather"
+      },
+      {
+        "type": "toggle",
+        "messageKey": "SHOW_WEATHER",
+        "defaultValue": false,
+        "label": "Show Weather Module"
+      }
+    ]
+  },
+  {
     "type": "submit",
     "defaultValue": "Save Settings"
   }

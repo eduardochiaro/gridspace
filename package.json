@@ -42,7 +42,9 @@
       "USE_24_HOUR",
       "DATE_LEFT",
       "DATE_RIGHT",
-      "LOAD_ANIMATION"
+      "LOAD_ANIMATION",
+      "SHOW_WEATHER",
+      "WEATHER_TEMPERATURE"
     ],
     "resources": {
       "media": [
