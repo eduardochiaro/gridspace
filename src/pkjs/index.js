@@ -34,7 +34,6 @@ function fetchWeather(lat, lon, successCallback, errorCallback) {
           var data = JSON.parse(xhr.responseText);
           if (data.current) {
             var tempCelsius = Math.round(data.current.temperature_2m);
-            
             // Store weather data for caching
             lastWeatherData = {
               tempCelsius: tempCelsius

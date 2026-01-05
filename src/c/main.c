@@ -495,8 +495,12 @@ static void canvas_update_proc(Layer *layer, GContext *ctx) {
   int small_spacing = digit_spacing;
   int date_width = (small_spacing == 1) ? 16 : 14;  // Increased by 1 for 2-wide separator
   
+  // Check if weather should use step/battery position
+  bool weather_in_step_position = s_flags.show_weather && !s_flags.show_steps && !s_flags.show_battery;
+  
   // Calculate vertical offset for weather module
-  int vertical_offset = s_flags.show_weather ? 3 : 0;
+  // Only move face down if weather is enabled AND (steps OR battery are shown)
+  int vertical_offset = (s_flags.show_weather && !weather_in_step_position) ? 3 : 0;
   
   // Center time vertically with date below (adjusted for weather)
   int time_row = ((s_grid_rows - 7) / 2) + vertical_offset;  // 7 = time height
@@ -508,10 +512,21 @@ static void canvas_update_proc(Layer *layer, GContext *ctx) {
   
   // Weather module (if enabled)
   if (s_flags.show_weather) {
-    int weather_row = 2;  // 2 grid spaces from top
-    int weather_col = 5;  // 5 grid spaces from left
-    int weather_width = s_grid_cols - 10;  // 5 from each side
-    int weather_height = step_row - weather_row - 2;  // 2 grid spaces padding from step tracker
+    int weather_row, weather_col, weather_width, weather_height;
+    
+    if (weather_in_step_position) {
+      // Weather replaces step/battery position - use step bar area
+      weather_row = step_row;
+      weather_col = time_col;
+      weather_width = time_width;
+      weather_height = 5;  // Same height as step bar
+    } else {
+      // Weather at top position
+      weather_row = 2;  // 2 grid spaces from top
+      weather_col = 5;  // 5 grid spaces from left
+      weather_width = s_grid_cols - 10;  // 5 from each side
+      weather_height = step_row - weather_row - 2;  // 2 grid spaces padding from step tracker
+    }
     
     // Convert temperature if needed (data is always in Celsius)
     int display_temp = s_weather_temp;
