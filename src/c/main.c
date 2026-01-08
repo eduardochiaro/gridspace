@@ -421,6 +421,11 @@ static void draw_battery(GContext *ctx, int col, int row) {
 
 // Draw weather module with temperature
 static void draw_weather(GContext *ctx, int col, int row, int width, int height, int temperature, bool is_celsius) {
+  // Safety checks
+  if (width < 1 || height < 1) return;
+  if (col < 0 || row < 0) return;
+  if (col >= s_grid_cols || row >= s_grid_rows) return;
+  
   // Calculate number of digits in temperature
   bool is_negative = temperature < 0;
   int temp = is_negative ? -temperature : temperature;
@@ -431,6 +436,10 @@ static void draw_weather(GContext *ctx, int col, int row, int width, int height,
   int minus_width = is_negative ? 4 : 0;  // 3 for sign + 1 spacing
   int total_width = minus_width + (num_digits * 3) + (num_digits - 1) + 1 + 2 + 1 + 3;
   int start_col = col + (width - total_width) / 2;  // Center horizontally
+  
+  // Safety check: ensure start_col is within bounds
+  if (start_col < 0) start_col = col;
+  if (start_col >= s_grid_cols) return;
   
   int c = start_col;
   
@@ -507,6 +516,11 @@ static void canvas_update_proc(Layer *layer, GContext *ctx) {
   int step_row = time_row - 5 - 2;        // 5 = step bar height, 2 = gap
   int date_row = time_row + 7 + 2;        // 2 row gap after time
   
+  // Safety check: ensure step_row is non-negative
+  if (step_row < 0) {
+    step_row = 0;
+  }
+  
   int time_col = (s_grid_cols - time_width) / 2;
   int date_col = (s_grid_cols - date_width) / 2 - 1;  // Moved one space left
   
@@ -526,6 +540,16 @@ static void canvas_update_proc(Layer *layer, GContext *ctx) {
       weather_col = 5;  // 5 grid spaces from left
       weather_width = s_grid_cols - 10;  // 5 from each side
       weather_height = step_row - weather_row - 2;  // 2 grid spaces padding from step tracker
+      
+      // Safety check: ensure weather_width is positive
+      if (weather_width < 1) {
+        weather_width = 1;
+      }
+      
+      // Safety check: ensure weather_height is positive
+      if (weather_height < 1) {
+        weather_height = 1;
+      }
     }
     
     // Convert temperature if needed (data is always in Celsius)
@@ -604,14 +628,18 @@ static void canvas_update_proc(Layer *layer, GContext *ctx) {
       
       switch (date_type) {
         case 0: // Month Name (2 letters)
-          draw_small_letter(ctx, month_letters[s_month - 1][0], col, date_row, true);
-          col += 3 + small_spacing;
-          draw_small_letter(ctx, month_letters[s_month - 1][1], col, date_row, true);
+          if (s_month >= 1 && s_month <= 12) {
+            draw_small_letter(ctx, month_letters[s_month - 1][0], col, date_row, true);
+            col += 3 + small_spacing;
+            draw_small_letter(ctx, month_letters[s_month - 1][1], col, date_row, true);
+          }
           break;
         case 1: // Week Day (2 letters)
-          draw_small_letter(ctx, weekday_letters[s_weekday][0], col, date_row, true);
-          col += 3 + small_spacing;
-          draw_small_letter(ctx, weekday_letters[s_weekday][1], col, date_row, true);
+          if (s_weekday <= 6) {
+            draw_small_letter(ctx, weekday_letters[s_weekday][0], col, date_row, true);
+            col += 3 + small_spacing;
+            draw_small_letter(ctx, weekday_letters[s_weekday][1], col, date_row, true);
+          }
           break;
         case 2: // Week of the Year
           draw_small_digit(ctx, s_week / 10, col, date_row, true);
