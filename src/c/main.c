@@ -53,7 +53,8 @@ static AnimationState s_load_anim;
 static uint16_t s_steps = 0;
 static uint8_t s_battery_level = 0;
 static uint16_t s_step_goal = 8000;
-static uint8_t s_load_animation = 1;
+static uint8_t s_load_animation = 2;
+static int16_t s_weather_temp = 0;  // Temperature in Celsius
 
 // Packed boolean flags (saves memory)
 static struct {
@@ -62,6 +63,8 @@ static struct {
   uint8_t show_battery:1;
   uint8_t show_date:1;
   uint8_t use_24h:1;
+  uint8_t show_weather:1;
+  uint8_t weather_use_fahrenheit:1;
   uint8_t date_left:3;   // 0=MonthName, 1=WeekDay, 2=WeekNum, 3=Day, 4=Month, 5=Year
   uint8_t date_right:3;  // 0=MonthName, 1=WeekDay, 2=WeekNum, 3=Day, 4=Month, 5=Year
 } s_flags = {
@@ -70,6 +73,8 @@ static struct {
   .show_battery = 1,
   .show_date = 1,
   .use_24h = 1,
+  .show_weather = 0,
+  .weather_use_fahrenheit = 0,
   .date_left = 3,   // Day
   .date_right = 4   // Month
 };
@@ -91,6 +96,8 @@ static GColor s_secondary_color;
 #define PERSIST_KEY_DATE_LEFT 9
 #define PERSIST_KEY_DATE_RIGHT 10
 #define PERSIST_KEY_LOAD_ANIMATION 11
+#define PERSIST_KEY_SHOW_WEATHER 12
+#define PERSIST_KEY_WEATHER_UNIT 13
 
 // Small digit patterns (3x5 for each digit 0-9) - using only full cells
 static const uint8_t small_digit_patterns[10][15] = {
@@ -412,6 +419,72 @@ static void draw_battery(GContext *ctx, int col, int row) {
   }
 }
 
+// Draw weather module with temperature
+static void draw_weather(GContext *ctx, int col, int row, int width, int height, int temperature, bool is_celsius) {
+  // Safety checks
+  if (width < 1 || height < 1) return;
+  if (col < 0 || row < 0) return;
+  if (col >= s_grid_cols || row >= s_grid_rows) return;
+  
+  // Calculate number of digits in temperature
+  bool is_negative = temperature < 0;
+  int temp = is_negative ? -temperature : temperature;
+  int num_digits = (temp >= 100) ? 3 : (temp >= 10) ? 2 : 1;
+  
+  // Calculate total width: minus sign (if negative) + digits + spacing + degree + letter
+  // Minus sign: 3 + 1 spacing (if negative)
+  int minus_width = is_negative ? 4 : 0;  // 3 for sign + 1 spacing
+  int total_width = minus_width + (num_digits * 3) + (num_digits - 1) + 1 + 2 + 1 + 3;
+  int start_col = col + (width - total_width) / 2;  // Center horizontally
+  
+  // Safety check: ensure start_col is within bounds
+  if (start_col < 0) start_col = col;
+  if (start_col >= s_grid_cols) return;
+  
+  int c = start_col;
+  
+  // Draw minus sign if negative
+  if (is_negative) {
+    // Draw horizontal line in middle row (row 2 out of 0-4)
+    for (int i = 0; i < 3; i++) {
+      int x = s_grid_offset_x + (c + i) * CELL_SIZE;
+      int y = s_grid_offset_y + (row + 2) * CELL_SIZE;
+      draw_cell_at(ctx, x, y, CELL_FULL, false);
+    }
+    c += 3 + 1;  // 3 wide + 1 spacing
+  }
+  
+  // Extract digits
+  int d1 = temp / 100;
+  int d2 = (temp / 10) % 10;
+  int d3 = temp % 10;
+  
+  // Draw digits based on number of digits
+  if (num_digits == 3) {
+    draw_small_digit(ctx, d1, c, row, false);
+    c += 3 + 1;
+  }
+  if (num_digits >= 2) {
+    draw_small_digit(ctx, d2, c, row, false);
+    c += 3 + 1;
+  }
+  draw_small_digit(ctx, d3, c, row, false);
+  c += 3 + 1;
+  
+  // Draw degree symbol (small circle - 2x2)
+  int x = s_grid_offset_x + c * CELL_SIZE;
+  int y = s_grid_offset_y + row * CELL_SIZE;
+  draw_cell_at(ctx, x, y, CELL_PARTIAL, true);
+  draw_cell_at(ctx, x + CELL_SIZE, y, CELL_PARTIAL, true);
+  draw_cell_at(ctx, x, y + CELL_SIZE, CELL_PARTIAL, true);
+  draw_cell_at(ctx, x + CELL_SIZE, y + CELL_SIZE, CELL_PARTIAL, true);
+  c += 2 + 1;  // 2 wide + 1 spacing
+  
+  // Draw "F" or "C"
+  int letter_index = is_celsius ? 14 : 7;  // C is at index 14, F is at index 7
+  draw_small_letter(ctx, letter_index, c, row, false);
+}
+
 // Canvas update procedure - draws everything directly, no buffer
 static void canvas_update_proc(Layer *layer, GContext *ctx) {
   // Draw load animation on top if active - skip normal content
@@ -431,13 +504,63 @@ static void canvas_update_proc(Layer *layer, GContext *ctx) {
   int small_spacing = digit_spacing;
   int date_width = (small_spacing == 1) ? 16 : 14;  // Increased by 1 for 2-wide separator
   
-  // Center time vertically with date below
-  int time_row = (s_grid_rows - 7) / 2;  // 7 = time height
+  // Check if weather should use step/battery position
+  bool weather_in_step_position = s_flags.show_weather && !s_flags.show_steps && !s_flags.show_battery;
+  
+  // Calculate vertical offset for weather module
+  // Only move face down if weather is enabled AND (steps OR battery are shown)
+  int vertical_offset = (s_flags.show_weather && !weather_in_step_position) ? 3 : 0;
+  
+  // Center time vertically with date below (adjusted for weather)
+  int time_row = ((s_grid_rows - 7) / 2) + vertical_offset;  // 7 = time height
   int step_row = time_row - 5 - 2;        // 5 = step bar height, 2 = gap
   int date_row = time_row + 7 + 2;        // 2 row gap after time
   
+  // Safety check: ensure step_row is non-negative
+  if (step_row < 0) {
+    step_row = 0;
+  }
+  
   int time_col = (s_grid_cols - time_width) / 2;
   int date_col = (s_grid_cols - date_width) / 2 - 1;  // Moved one space left
+  
+  // Weather module (if enabled)
+  if (s_flags.show_weather) {
+    int weather_row, weather_col, weather_width, weather_height;
+    
+    if (weather_in_step_position) {
+      // Weather replaces step/battery position - use step bar area
+      weather_row = step_row;
+      weather_col = time_col;
+      weather_width = time_width;
+      weather_height = 5;  // Same height as step bar
+    } else {
+      // Weather at top position
+      weather_row = 2;  // 2 grid spaces from top
+      weather_col = 5;  // 5 grid spaces from left
+      weather_width = s_grid_cols - 10;  // 5 from each side
+      weather_height = step_row - weather_row - 2;  // 2 grid spaces padding from step tracker
+      
+      // Safety check: ensure weather_width is positive
+      if (weather_width < 1) {
+        weather_width = 1;
+      }
+      
+      // Safety check: ensure weather_height is positive
+      if (weather_height < 1) {
+        weather_height = 1;
+      }
+    }
+    
+    // Convert temperature if needed (data is always in Celsius)
+    int display_temp = s_weather_temp;
+    if (s_flags.weather_use_fahrenheit) {
+      // Convert C to F: (C * 9/5) + 32
+      display_temp = (s_weather_temp * 9 / 5) + 32;
+    }
+    
+    draw_weather(ctx, weather_col, weather_row, weather_width, weather_height, display_temp, !s_flags.weather_use_fahrenheit);
+  }
   
   // Step bar (above time, aligned with left side of time)
   if (s_flags.show_steps && s_flags.health_available) {
@@ -505,14 +628,18 @@ static void canvas_update_proc(Layer *layer, GContext *ctx) {
       
       switch (date_type) {
         case 0: // Month Name (2 letters)
-          draw_small_letter(ctx, month_letters[s_month - 1][0], col, date_row, true);
-          col += 3 + small_spacing;
-          draw_small_letter(ctx, month_letters[s_month - 1][1], col, date_row, true);
+          if (s_month >= 1 && s_month <= 12) {
+            draw_small_letter(ctx, month_letters[s_month - 1][0], col, date_row, true);
+            col += 3 + small_spacing;
+            draw_small_letter(ctx, month_letters[s_month - 1][1], col, date_row, true);
+          }
           break;
         case 1: // Week Day (2 letters)
-          draw_small_letter(ctx, weekday_letters[s_weekday][0], col, date_row, true);
-          col += 3 + small_spacing;
-          draw_small_letter(ctx, weekday_letters[s_weekday][1], col, date_row, true);
+          if (s_weekday <= 6) {
+            draw_small_letter(ctx, weekday_letters[s_weekday][0], col, date_row, true);
+            col += 3 + small_spacing;
+            draw_small_letter(ctx, weekday_letters[s_weekday][1], col, date_row, true);
+          }
           break;
         case 2: // Week of the Year
           draw_small_digit(ctx, s_week / 10, col, date_row, true);
@@ -698,6 +825,12 @@ static void load_settings(void) {
   if (persist_exists(PERSIST_KEY_LOAD_ANIMATION)) {
     s_load_animation = (uint8_t)persist_read_int(PERSIST_KEY_LOAD_ANIMATION);
   }
+  if (persist_exists(PERSIST_KEY_SHOW_WEATHER)) {
+    s_flags.show_weather = persist_read_bool(PERSIST_KEY_SHOW_WEATHER);
+  }
+  if (persist_exists(PERSIST_KEY_WEATHER_UNIT)) {
+    s_flags.weather_use_fahrenheit = persist_read_bool(PERSIST_KEY_WEATHER_UNIT);
+  }
 }
 
 // Save settings to persistent storage
@@ -713,6 +846,8 @@ static void save_settings(void) {
   persist_write_int(PERSIST_KEY_DATE_LEFT, s_flags.date_left);
   persist_write_int(PERSIST_KEY_DATE_RIGHT, s_flags.date_right);
   persist_write_int(PERSIST_KEY_LOAD_ANIMATION, s_load_animation);
+  persist_write_bool(PERSIST_KEY_SHOW_WEATHER, s_flags.show_weather);
+  persist_write_bool(PERSIST_KEY_WEATHER_UNIT, s_flags.weather_use_fahrenheit);
 }
 
 // AppMessage inbox received handler
@@ -788,6 +923,24 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     if (anim_val < 0) anim_val = 0;
     if (anim_val > 3) anim_val = 3;
     s_load_animation = (uint8_t)anim_val;
+  }
+  
+  // Show weather
+  Tuple *weather_t = dict_find(iter, MESSAGE_KEY_SHOW_WEATHER);
+  if (weather_t) {
+    s_flags.show_weather = weather_t->value->int32 == 1;
+  }
+  
+  // Weather temperature (always in Celsius)
+  Tuple *temp_t = dict_find(iter, MESSAGE_KEY_WEATHER_TEMPERATURE);
+  if (temp_t) {
+    s_weather_temp = (int16_t)temp_t->value->int32;
+  }
+  
+  // Weather unit (C or F)
+  Tuple *unit_t = dict_find(iter, MESSAGE_KEY_WEATHER_UNIT);
+  if (unit_t) {
+    s_flags.weather_use_fahrenheit = (strcmp(unit_t->value->cstring, "F") == 0);
   }
   
   // Save and update

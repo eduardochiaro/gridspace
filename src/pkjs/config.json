@@ -195,6 +195,37 @@
     ]
   },
   {
+    "type": "section",
+    "items": [
+      {
+        "type": "heading",
+        "defaultValue": "Weather"
+      },
+      {
+        "type": "toggle",
+        "messageKey": "SHOW_WEATHER",
+        "defaultValue": false,
+        "label": "Show Weather Module"
+      },
+      {
+        "type": "select",
+        "messageKey": "WEATHER_UNIT",
+        "defaultValue": "C",
+        "label": "Temperature Unit",
+        "options": [
+          {
+            "label": "Celsius (°C)",
+            "value": "C"
+          },
+          {
+            "label": "Fahrenheit (°F)",
+            "value": "F"
+          }
+        ]
+      }
+    ]
+  },
+  {
     "type": "submit",
     "defaultValue": "Save Settings"
   }
