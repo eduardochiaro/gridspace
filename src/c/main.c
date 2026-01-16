@@ -1,6 +1,7 @@
 #include <pebble.h>
 #include <string.h>
 #include "animations.h"
+#include "common.h"
 
 // Grid cell size (larger on Emery)
 #ifdef PBL_PLATFORM_EMERY
@@ -17,33 +18,24 @@
   #define PARTIAL_OFFSET 2
 #endif
 
-// Cell states
-#define CELL_EMPTY 0
-#define CELL_PARTIAL 1
-#define CELL_FULL 2
-
 static Window *s_window;
 static Layer *s_canvas_layer;
 
-// Grid dimensions (calculated based on screen size)
-static int s_grid_cols;
-static int s_grid_rows;
-static int s_grid_offset_x;
-static int s_grid_offset_y;
+// Grid parameters (shared struct for drawing)
+static GridParams s_gp;
 
 // Cached time values (updated once per minute)
 static uint8_t s_hour, s_minute, s_day, s_month, s_week, s_weekday, s_year;
 static int8_t s_prev_hour = -1, s_prev_minute = -1;
 
 // Animation constants
-#define ANIM_STEP 0.1f
 #define ANIM_INTERVAL_MS 100
 #define NUM_DIGITS 4
 
-// Animation state for 4 time digits (h1, h2, m1, m2)
+// Animation state for 4 time digits - using fixed-point (8.8)
 static int8_t s_anim_old_digits[NUM_DIGITS] = {-1, -1, -1, -1};
 static int8_t s_anim_new_digits[NUM_DIGITS] = {-1, -1, -1, -1};
-static float s_anim_progress[NUM_DIGITS] = {1.0f, 1.0f, 1.0f, 1.0f};
+static uint8_t s_anim_progress[NUM_DIGITS] = {255, 255, 255, 255}; // 255 = complete (10 steps max)
 static AppTimer *s_anim_timer = NULL;
 
 // Load animation
@@ -54,9 +46,9 @@ static uint16_t s_steps = 0;
 static uint8_t s_battery_level = 0;
 static uint16_t s_step_goal = 8000;
 static uint8_t s_load_animation = 2;
-static int16_t s_weather_temp = 0;  // Temperature in Celsius
+static int16_t s_weather_temp = 0;
 
-// Packed boolean flags (saves memory)
+// Packed boolean flags
 static struct {
   uint8_t health_available:1;
   uint8_t show_steps:1;
@@ -65,21 +57,15 @@ static struct {
   uint8_t use_24h:1;
   uint8_t show_weather:1;
   uint8_t weather_use_fahrenheit:1;
-  uint8_t date_left:3;   // 0=MonthName, 1=WeekDay, 2=WeekNum, 3=Day, 4=Month, 5=Year
-  uint8_t date_right:3;  // 0=MonthName, 1=WeekDay, 2=WeekNum, 3=Day, 4=Month, 5=Year
+  uint8_t date_left:3;
+  uint8_t date_right:3;
 } s_flags = {
-  .health_available = 0,
-  .show_steps = 1,
-  .show_battery = 1,
-  .show_date = 1,
-  .use_24h = 1,
-  .show_weather = 0,
-  .weather_use_fahrenheit = 0,
-  .date_left = 3,   // Day
-  .date_right = 4   // Month
+  .health_available = 0, .show_steps = 1, .show_battery = 1, .show_date = 1,
+  .use_24h = 1, .show_weather = 0, .weather_use_fahrenheit = 0,
+  .date_left = 3, .date_right = 4
 };
 
-// Color settings (3 bytes each = 9 bytes total)
+// Colors
 static GColor s_bg_color;
 static GColor s_fg_color;
 static GColor s_secondary_color;
@@ -99,107 +85,85 @@ static GColor s_secondary_color;
 #define PERSIST_KEY_SHOW_WEATHER 12
 #define PERSIST_KEY_WEATHER_UNIT 13
 
-// Small digit patterns (3x5 for each digit 0-9) - using only full cells
-static const uint8_t small_digit_patterns[10][15] = {
-  {2,2,2, 2,0,2, 2,0,2, 2,0,2, 2,2,2}, // 0
-  {0,2,0, 0,2,0, 0,2,0, 0,2,0, 0,2,0}, // 1
-  {2,2,2, 0,0,2, 2,2,2, 2,0,0, 2,2,2}, // 2
-  {2,2,2, 0,0,2, 2,2,2, 0,0,2, 2,2,2}, // 3
-  {2,0,2, 2,0,2, 2,2,2, 0,0,2, 0,0,2}, // 4
-  {2,2,2, 2,0,0, 2,2,2, 0,0,2, 2,2,2}, // 5
-  {2,2,2, 2,0,0, 2,2,2, 2,0,2, 2,2,2}, // 6
-  {2,2,2, 0,0,2, 0,2,0, 0,2,0, 0,2,0}, // 7
-  {2,2,2, 2,0,2, 2,2,2, 2,0,2, 2,2,2}, // 8
-  {2,2,2, 2,0,2, 2,2,2, 0,0,2, 2,2,2}  // 9
+// Packed digit patterns (5x7=35 cells, 2 bits each = 9 bytes per digit)
+// Packing: 4 cells per byte, LSB first
+static const uint8_t digit_packed[10][9] = {
+  {0x96, 0x08, 0x82, 0x20, 0x08, 0x82, 0x20, 0x68, 0x01}, // 0
+  {0x20, 0xA8, 0x20, 0x08, 0x02, 0x80, 0x20, 0x68, 0x01}, // 1
+  {0x96, 0x08, 0x80, 0x20, 0x68, 0x82, 0x20, 0x68, 0x01}, // 2
+  {0x96, 0x08, 0x80, 0x20, 0x68, 0x80, 0x20, 0x68, 0x01}, // 3
+  {0x14, 0x28, 0x82, 0x20, 0x28, 0x80, 0x20, 0x10, 0x00}, // 4
+  {0x96, 0x28, 0x82, 0x00, 0x68, 0x80, 0x20, 0x68, 0x01}, // 5
+  {0x96, 0x28, 0x82, 0x00, 0xA8, 0x82, 0x20, 0x68, 0x01}, // 6
+  {0x96, 0x08, 0x80, 0x00, 0x82, 0x20, 0x08, 0x10, 0x00}, // 7
+  {0x96, 0x28, 0x82, 0x20, 0x68, 0x82, 0x20, 0x68, 0x01}, // 8
+  {0x96, 0x28, 0x82, 0x20, 0xA8, 0x80, 0x20, 0x68, 0x01}  // 9
 };
 
-// Small letter patterns (3x5) for weekday and month names
+// Small digit patterns (3x5=15 cells, 2 bits each = 4 bytes per digit)
+static const uint8_t small_digit_packed[10][4] = {
+  {0xAA, 0x8A, 0xA2, 0x0A}, // 0
+  {0x28, 0x82, 0x20, 0x08}, // 1
+  {0xAA, 0x20, 0x8A, 0x0A}, // 2
+  {0xAA, 0x20, 0x2A, 0x0A}, // 3
+  {0xA2, 0xA2, 0x20, 0x08}, // 4
+  {0xAA, 0x82, 0x20, 0x0A}, // 5
+  {0xAA, 0x82, 0xA2, 0x0A}, // 6
+  {0xAA, 0x20, 0x28, 0x08}, // 7
+  {0xAA, 0xA2, 0xA2, 0x0A}, // 8
+  {0xAA, 0xA2, 0x20, 0x0A}  // 9
+};
+
+// Small letter patterns (3x5=15 cells, 4 bytes each)
 // Letters: M, O, T, U, W, E, H, F, R, S, A, J, P, G, C, N, D, Y, L
-static const uint8_t small_letter_patterns[19][15] = {
-  {2,0,2, 2,2,2, 2,2,2, 2,0,2, 2,0,2}, // M  0
-  {2,2,2, 2,0,2, 2,0,2, 2,0,2, 2,2,2}, // O  1
-  {2,2,2, 0,2,0, 0,2,0, 0,2,0, 0,2,0}, // T  2
-  {2,0,2, 2,0,2, 2,0,2, 2,0,2, 2,2,2}, // U  3
-  {2,0,2, 2,0,2, 2,2,2, 2,2,2, 2,0,2}, // W  4
-  {2,2,2, 2,0,0, 2,2,2, 2,0,0, 2,2,2}, // E  5
-  {2,0,2, 2,0,2, 2,2,2, 2,0,2, 2,0,2}, // H  6
-  {2,2,2, 2,0,0, 2,2,2, 2,0,0, 2,0,0}, // F  7
-  {2,2,2, 2,0,2, 2,2,2, 2,2,0, 2,0,2}, // R  8
-  {2,2,2, 2,0,0, 2,2,2, 0,0,2, 2,2,2}, // S  9
-  {2,2,2, 2,0,2, 2,2,2, 2,0,2, 2,0,2}, // A  10
-  {0,0,2, 0,0,2, 0,0,2, 2,0,2, 2,2,2}, // J  11
-  {2,2,2, 2,0,2, 2,2,2, 2,0,0, 2,0,0}, // P  12
-  {2,2,2, 2,0,0, 2,0,2, 2,0,2, 2,2,2}, // G  13
-  {2,2,2, 2,0,0, 2,0,0, 2,0,0, 2,2,2}, // C  14
-  {2,0,2, 2,2,2, 2,2,2, 2,0,2, 2,0,2}, // N  15
-  {2,2,0, 2,0,2, 2,0,2, 2,0,2, 2,2,0}, // D  16
-  {2,0,2, 2,0,2, 0,2,0, 0,2,0, 0,2,0}, // Y  17
-  {2,0,0, 2,0,0, 2,0,0, 2,0,0, 2,2,2}  // L  18
+static const uint8_t small_letter_packed[19][4] = {
+  {0xA2, 0xAA, 0xA2, 0x0A}, // M
+  {0xAA, 0xA2, 0xA2, 0x0A}, // O
+  {0xAA, 0x28, 0x28, 0x08}, // T
+  {0xA2, 0xA2, 0xA2, 0x0A}, // U
+  {0xA2, 0xA2, 0xAA, 0x0A}, // W
+  {0xAA, 0x82, 0x82, 0x0A}, // E
+  {0xA2, 0xA2, 0xA2, 0x0A}, // H (same structure as U)
+  {0xAA, 0x82, 0x82, 0x08}, // F
+  {0xAA, 0xA2, 0xA8, 0x0A}, // R
+  {0xAA, 0x82, 0x20, 0x0A}, // S
+  {0xAA, 0xA2, 0xA2, 0x0A}, // A
+  {0x20, 0x20, 0xA2, 0x0A}, // J
+  {0xAA, 0xA2, 0x82, 0x08}, // P
+  {0xAA, 0x82, 0xA2, 0x0A}, // G
+  {0xAA, 0x82, 0x82, 0x0A}, // C
+  {0xA2, 0xAA, 0xA2, 0x0A}, // N
+  {0xA8, 0xA2, 0xA2, 0x0A}, // D
+  {0xA2, 0xA2, 0x28, 0x08}, // Y
+  {0x82, 0x82, 0x82, 0x0A}  // L
 };
 
-// Weekday letter indices: [day][letter] where day: 0=Mon, 1=Tue, 2=Wed, 3=Thu, 4=Fri, 5=Sat, 6=Sun
-// Letter indices: M=0, O=1, T=2, U=3, W=4, E=5, H=6, F=7, R=8, S=9, A=10
+// Weekday/month lookup tables (unchanged - already compact)
 static const uint8_t weekday_letters[7][2] = {
-  {0, 1},  // MO - Monday
-  {2, 3},  // TU - Tuesday
-  {4, 5},  // WE - Wednesday
-  {2, 6},  // TH - Thursday
-  {7, 8},  // FR - Friday
-  {9, 10}, // SA - Saturday
-  {9, 3}   // SU - Sunday
+  {0, 1}, {2, 3}, {4, 5}, {2, 6}, {7, 8}, {9, 10}, {9, 3}
 };
-
-// Month letter indices: [month][letter] where month: 0=Jan, 1=Feb, ..., 11=Dec
-// Using unique 2-letter codes: JA, FE, MR, AP, MY, JN, JL, AU, SE, OC, NO, DE
 static const uint8_t month_letters[12][2] = {
-  {11, 10}, // JA - January
-  {7, 5},   // FE - February
-  {0, 8},   // MR - March
-  {10, 12}, // AP - April
-  {0, 17},  // MY - May
-  {11, 15}, // JN - June
-  {11, 18}, // JL - July
-  {10, 3},  // AU - August
-  {9, 5},   // SE - September
-  {1, 14},  // OC - October
-  {15, 1},  // NO - November
-  {16, 5}   // DE - December
-};
-
-// Digit patterns (5x7 for each digit 0-9)
-static const uint8_t digit_patterns[10][35] = {
-  {1,2,2,2,1, 2,0,0,0,2, 2,0,0,0,2, 2,0,0,0,2, 2,0,0,0,2, 2,0,0,0,2, 1,2,2,2,1}, // 0
-  {0,0,2,0,0, 1,2,2,0,0, 0,0,2,0,0, 0,0,2,0,0, 0,0,2,0,0, 0,0,2,0,0, 1,2,2,2,1}, // 1
-  {1,2,2,2,1, 0,0,0,0,2, 0,0,0,0,2, 1,2,2,2,1, 2,0,0,0,0, 2,0,0,0,0, 1,2,2,2,1}, // 2
-  {1,2,2,2,1, 0,0,0,0,2, 0,0,0,0,2, 0,1,2,2,1, 0,0,0,0,2, 0,0,0,0,2, 1,2,2,2,1}, // 3
-  {1,0,0,0,1, 2,0,0,0,2, 2,0,0,0,2, 1,2,2,2,2, 0,0,0,0,2, 0,0,0,0,2, 0,0,0,0,1}, // 4
-  {1,2,2,2,1, 2,0,0,0,0, 2,0,0,0,0, 1,2,2,2,1, 0,0,0,0,2, 0,0,0,0,2, 1,2,2,2,1}, // 5
-  {1,2,2,2,1, 2,0,0,0,0, 2,0,0,0,0, 2,2,2,2,1, 2,0,0,0,2, 2,0,0,0,2, 1,2,2,2,1}, // 6
-  {1,2,2,2,1, 0,0,0,0,2, 0,0,0,0,2, 0,0,0,2,0, 0,0,2,0,0, 0,0,2,0,0, 0,0,1,0,0}, // 7
-  {1,2,2,2,1, 2,0,0,0,2, 2,0,0,0,2, 1,2,2,2,1, 2,0,0,0,2, 2,0,0,0,2, 1,2,2,2,1}, // 8
-  {1,2,2,2,1, 2,0,0,0,2, 2,0,0,0,2, 1,2,2,2,2, 0,0,0,0,2, 0,0,0,0,2, 1,2,2,2,1}  // 9
+  {11, 10}, {7, 5}, {0, 8}, {10, 12}, {0, 17}, {11, 15},
+  {11, 18}, {10, 3}, {9, 5}, {1, 14}, {15, 1}, {16, 5}
 };
 
 // Draw a cell at pixel coordinates
 static inline void draw_cell_at(GContext *ctx, int x, int y, uint8_t state, bool use_secondary) {
   if (state == CELL_EMPTY) return;
-  
   graphics_context_set_fill_color(ctx, use_secondary ? s_secondary_color : s_fg_color);
-  
   if (state == CELL_FULL) {
     graphics_fill_rect(ctx, GRect(x + FULL_OFFSET, y + FULL_OFFSET, FULL_SIZE, FULL_SIZE), 0, GCornerNone);
-  } else { // CELL_PARTIAL
+  } else {
     graphics_fill_rect(ctx, GRect(x + PARTIAL_OFFSET, y + PARTIAL_OFFSET, PARTIAL_SIZE, PARTIAL_SIZE), 0, GCornerNone);
   }
 }
 
 // Helper to draw 2x2 checkerboard pattern
 static inline void draw_checkerboard_2x2(GContext *ctx, int col, int row, bool inverted, bool use_gray) {
-  int x0 = s_grid_offset_x + col * CELL_SIZE;
-  int y0 = s_grid_offset_y + row * CELL_SIZE;
-  int x1 = s_grid_offset_x + (col + 1) * CELL_SIZE;
-  int y1 = s_grid_offset_y + (row + 1) * CELL_SIZE;
-  
+  int x0 = s_gp.offset_x + col * CELL_SIZE;
+  int y0 = s_gp.offset_y + row * CELL_SIZE;
+  int x1 = s_gp.offset_x + (col + 1) * CELL_SIZE;
+  int y1 = s_gp.offset_y + (row + 1) * CELL_SIZE;
   if (!inverted) {
     draw_cell_at(ctx, x0, y0, CELL_FULL, use_gray);
     draw_cell_at(ctx, x1, y0, CELL_PARTIAL, use_gray);
@@ -213,155 +177,105 @@ static inline void draw_checkerboard_2x2(GContext *ctx, int col, int row, bool i
   }
 }
 
-// Draw a large digit directly
+// Draw a large digit from packed data (5x7)
 static void draw_digit(GContext *ctx, int digit, int col, int row, bool use_gray) {
   if (digit < 0 || digit > 9) return;
-  const uint8_t *pattern = digit_patterns[digit];
-  
-  for (int r = 0; r < 7; r++) {
-    for (int c = 0; c < 5; c++) {
-      uint8_t state = pattern[r * 5 + c];
-      if (state != CELL_EMPTY) {
-        int x = s_grid_offset_x + (col + c) * CELL_SIZE;
-        int y = s_grid_offset_y + (row + r) * CELL_SIZE;
-        draw_cell_at(ctx, x, y, state, use_gray);
-      }
+  const uint8_t *packed = digit_packed[digit];
+  for (int i = 0; i < 35; i++) {
+    uint8_t state = get_packed_cell(packed, i);
+    if (state != CELL_EMPTY) {
+      int x = s_gp.offset_x + (col + (i % 5)) * CELL_SIZE;
+      int y = s_gp.offset_y + (row + (i / 5)) * CELL_SIZE;
+      draw_cell_at(ctx, x, y, state, use_gray);
     }
   }
 }
 
-// Draw animated digit transition (old -> new, top to bottom)
-static void draw_digit_animated(GContext *ctx, int old_digit, int new_digit, float progress, int col, int row, bool use_gray) {
+// Draw animated digit transition using fixed-point progress (0-10 steps)
+static void draw_digit_animated(GContext *ctx, int old_digit, int new_digit, uint8_t progress, int col, int row, bool use_gray) {
   if (old_digit < 0 || old_digit > 9 || new_digit < 0 || new_digit > 9) return;
+  const uint8_t *old_packed = digit_packed[old_digit];
+  const uint8_t *new_packed = digit_packed[new_digit];
+  int transition_row = (progress * 7) / 10;  // 0-7 based on 0-10 progress
   
-  const uint8_t *old_pattern = digit_patterns[old_digit];
-  const uint8_t *new_pattern = digit_patterns[new_digit];
-  
-  // Progress goes from 0.0 (show old) to 1.0 (show new)
-  // Transition line moves from row 0 to row 7
-  int transition_row = (int)(progress * 7.0f);
-  
-  for (int r = 0; r < 7; r++) {
-    for (int c = 0; c < 5; c++) {
-      uint8_t old_state = old_pattern[r * 5 + c];
-      uint8_t new_state = new_pattern[r * 5 + c];
-      uint8_t state;
-      
-      if (r < transition_row) {
-        // Above transition line: show new digit
-        state = new_state;
-      } else if (r == transition_row) {
-        // On transition line: show partial/transition state
-        if (old_state == CELL_FULL && new_state == CELL_EMPTY) {
-          state = CELL_PARTIAL;
-        } else if (old_state == CELL_EMPTY && new_state == CELL_FULL) {
-          state = CELL_PARTIAL;
-        } else if (old_state == CELL_PARTIAL && new_state == CELL_FULL) {
-          state = CELL_PARTIAL;
-        } else if (old_state == CELL_FULL && new_state == CELL_PARTIAL) {
-          state = CELL_PARTIAL;
-        } else {
-          state = new_state;
-        }
-      } else {
-        // Below transition line: show old digit
-        state = old_state;
-      }
-      
-      if (state != CELL_EMPTY) {
-        int x = s_grid_offset_x + (col + c) * CELL_SIZE;
-        int y = s_grid_offset_y + (row + r) * CELL_SIZE;
-        draw_cell_at(ctx, x, y, state, use_gray);
-      }
+  for (int i = 0; i < 35; i++) {
+    int r = i / 5, c = i % 5;
+    uint8_t old_state = get_packed_cell(old_packed, i);
+    uint8_t new_state = get_packed_cell(new_packed, i);
+    uint8_t state = (r < transition_row) ? new_state : 
+                    (r == transition_row && old_state != new_state) ? CELL_PARTIAL : old_state;
+    if (state != CELL_EMPTY) {
+      int x = s_gp.offset_x + (col + c) * CELL_SIZE;
+      int y = s_gp.offset_y + (row + r) * CELL_SIZE;
+      draw_cell_at(ctx, x, y, state, use_gray);
     }
   }
 }
 
-// Draw a small digit directly
+// Draw a small digit from packed data (3x5)
 static void draw_small_digit(GContext *ctx, int digit, int col, int row, bool use_gray) {
   if (digit < 0 || digit > 9) return;
-  const uint8_t *pattern = small_digit_patterns[digit];
-  
-  for (int r = 0; r < 5; r++) {
-    for (int c = 0; c < 3; c++) {
-      uint8_t state = pattern[r * 3 + c];
-      if (state != CELL_EMPTY) {
-        int x = s_grid_offset_x + (col + c) * CELL_SIZE;
-        int y = s_grid_offset_y + (row + r) * CELL_SIZE;
-        draw_cell_at(ctx, x, y, state, use_gray);
-      }
+  const uint8_t *packed = small_digit_packed[digit];
+  for (int i = 0; i < 15; i++) {
+    uint8_t state = get_packed_cell(packed, i);
+    if (state != CELL_EMPTY) {
+      int x = s_gp.offset_x + (col + (i % 3)) * CELL_SIZE;
+      int y = s_gp.offset_y + (row + (i / 3)) * CELL_SIZE;
+      draw_cell_at(ctx, x, y, state, use_gray);
     }
   }
 }
 
-// Draw a small letter directly (for weekday and month names)
+// Draw a small letter from packed data (3x5)
 static void draw_small_letter(GContext *ctx, int letter_index, int col, int row, bool use_gray) {
   if (letter_index < 0 || letter_index > 18) return;
-  const uint8_t *pattern = small_letter_patterns[letter_index];
-  
-  for (int r = 0; r < 5; r++) {
-    for (int c = 0; c < 3; c++) {
-      uint8_t state = pattern[r * 3 + c];
-      if (state != CELL_EMPTY) {
-        int x = s_grid_offset_x + (col + c) * CELL_SIZE;
-        int y = s_grid_offset_y + (row + r) * CELL_SIZE;
-        draw_cell_at(ctx, x, y, state, use_gray);
-      }
+  const uint8_t *packed = small_letter_packed[letter_index];
+  for (int i = 0; i < 15; i++) {
+    uint8_t state = get_packed_cell(packed, i);
+    if (state != CELL_EMPTY) {
+      int x = s_gp.offset_x + (col + (i % 3)) * CELL_SIZE;
+      int y = s_gp.offset_y + (row + (i / 3)) * CELL_SIZE;
+      draw_cell_at(ctx, x, y, state, use_gray);
     }
   }
 }
 
 // Draw separator (vertical line for date)
 static void draw_separator(GContext *ctx, int col, int row, bool use_gray) {
-  // 3-row vertically centered pattern: FP, PF, FP
   draw_checkerboard_2x2(ctx, col, row + 1, false, use_gray);
   draw_checkerboard_2x2(ctx, col, row + 2, true, use_gray);
-  draw_cell_at(ctx, s_grid_offset_x + col * CELL_SIZE, 
-               s_grid_offset_y + (row + 3) * CELL_SIZE, CELL_FULL, use_gray);
-  draw_cell_at(ctx, s_grid_offset_x + (col + 1) * CELL_SIZE, 
-               s_grid_offset_y + (row + 3) * CELL_SIZE, CELL_PARTIAL, use_gray);
+  draw_cell_at(ctx, s_gp.offset_x + col * CELL_SIZE, 
+               s_gp.offset_y + (row + 3) * CELL_SIZE, CELL_FULL, use_gray);
+  draw_cell_at(ctx, s_gp.offset_x + (col + 1) * CELL_SIZE, 
+               s_gp.offset_y + (row + 3) * CELL_SIZE, CELL_PARTIAL, use_gray);
 }
 
 // Draw colon for time
 static void draw_colon(GContext *ctx, int col, int row) {
-  draw_checkerboard_2x2(ctx, col, row + 1, false, true);  // Top dot
-  draw_checkerboard_2x2(ctx, col, row + 4, true, true);   // Bottom dot (inverted)
+  draw_checkerboard_2x2(ctx, col, row + 1, false, true);
+  draw_checkerboard_2x2(ctx, col, row + 4, true, true);
 }
 
 // Draw corner decorations
 static void draw_corners(GContext *ctx) {
-  int x0 = s_grid_offset_x;
-  int y0 = s_grid_offset_y;
-  int xn = s_grid_offset_x + (s_grid_cols - 1) * CELL_SIZE;
-  int yn = s_grid_offset_y + (s_grid_rows - 1) * CELL_SIZE;
+  int x0 = s_gp.offset_x;
+  int y0 = s_gp.offset_y;
+  int xn = s_gp.offset_x + (s_gp.cols - 1) * CELL_SIZE;
+  int yn = s_gp.offset_y + (s_gp.rows - 1) * CELL_SIZE;
   
-  // Top-left: partial at corner (fg), full adjacent (secondary)
-  graphics_context_set_fill_color(ctx, s_fg_color);
-  graphics_fill_rect(ctx, GRect(x0 + PARTIAL_OFFSET, y0 + PARTIAL_OFFSET, PARTIAL_SIZE, PARTIAL_SIZE), 0, GCornerNone);
-  graphics_context_set_fill_color(ctx, s_secondary_color);
-  graphics_fill_rect(ctx, GRect(x0 + CELL_SIZE + FULL_OFFSET, y0 + FULL_OFFSET, FULL_SIZE, FULL_SIZE), 0, GCornerNone);
-  graphics_fill_rect(ctx, GRect(x0 + FULL_OFFSET, y0 + CELL_SIZE + FULL_OFFSET, FULL_SIZE, FULL_SIZE), 0, GCornerNone);
+  // All 4 corners: partial at corner (fg), full adjacent (secondary)
+  const int corners[4][2] = {{x0, y0}, {xn, y0}, {x0, yn}, {xn, yn}};
+  const int dirs[4][2] = {{1, 1}, {-1, 1}, {1, -1}, {-1, -1}};
   
-  // Top-right
-  graphics_context_set_fill_color(ctx, s_fg_color);
-  graphics_fill_rect(ctx, GRect(xn + PARTIAL_OFFSET, y0 + PARTIAL_OFFSET, PARTIAL_SIZE, PARTIAL_SIZE), 0, GCornerNone);
-  graphics_context_set_fill_color(ctx, s_secondary_color);
-  graphics_fill_rect(ctx, GRect(xn - CELL_SIZE + FULL_OFFSET, y0 + FULL_OFFSET, FULL_SIZE, FULL_SIZE), 0, GCornerNone);
-  graphics_fill_rect(ctx, GRect(xn + FULL_OFFSET, y0 + CELL_SIZE + FULL_OFFSET, FULL_SIZE, FULL_SIZE), 0, GCornerNone);
-  
-  // Bottom-left
-  graphics_context_set_fill_color(ctx, s_fg_color);
-  graphics_fill_rect(ctx, GRect(x0 + PARTIAL_OFFSET, yn + PARTIAL_OFFSET, PARTIAL_SIZE, PARTIAL_SIZE), 0, GCornerNone);
-  graphics_context_set_fill_color(ctx, s_secondary_color);
-  graphics_fill_rect(ctx, GRect(x0 + CELL_SIZE + FULL_OFFSET, yn + FULL_OFFSET, FULL_SIZE, FULL_SIZE), 0, GCornerNone);
-  graphics_fill_rect(ctx, GRect(x0 + FULL_OFFSET, yn - CELL_SIZE + FULL_OFFSET, FULL_SIZE, FULL_SIZE), 0, GCornerNone);
-  
-  // Bottom-right
-  graphics_context_set_fill_color(ctx, s_fg_color);
-  graphics_fill_rect(ctx, GRect(xn + PARTIAL_OFFSET, yn + PARTIAL_OFFSET, PARTIAL_SIZE, PARTIAL_SIZE), 0, GCornerNone);
-  graphics_context_set_fill_color(ctx, s_secondary_color);
-  graphics_fill_rect(ctx, GRect(xn - CELL_SIZE + FULL_OFFSET, yn + FULL_OFFSET, FULL_SIZE, FULL_SIZE), 0, GCornerNone);
-  graphics_fill_rect(ctx, GRect(xn + FULL_OFFSET, yn - CELL_SIZE + FULL_OFFSET, FULL_SIZE, FULL_SIZE), 0, GCornerNone);
+  for (int i = 0; i < 4; i++) {
+    int cx = corners[i][0], cy = corners[i][1];
+    int dx = dirs[i][0], dy = dirs[i][1];
+    graphics_context_set_fill_color(ctx, s_fg_color);
+    graphics_fill_rect(ctx, GRect(cx + PARTIAL_OFFSET, cy + PARTIAL_OFFSET, PARTIAL_SIZE, PARTIAL_SIZE), 0, GCornerNone);
+    graphics_context_set_fill_color(ctx, s_secondary_color);
+    graphics_fill_rect(ctx, GRect(cx + dx * CELL_SIZE + FULL_OFFSET, cy + FULL_OFFSET, FULL_SIZE, FULL_SIZE), 0, GCornerNone);
+    graphics_fill_rect(ctx, GRect(cx + FULL_OFFSET, cy + dy * CELL_SIZE + FULL_OFFSET, FULL_SIZE, FULL_SIZE), 0, GCornerNone);
+  }
 }
 
 // Draw step bar (5 rows x 15 cols, fills diagonally from bottom-left)
@@ -369,7 +283,6 @@ static void draw_step_bar(GContext *ctx, int col, int row) {
   const int total_cells = 75;
   int filled_cells = (s_steps * total_cells) / s_step_goal;
   if (filled_cells > total_cells) filled_cells = total_cells;
-  
   int remainder = (s_steps * total_cells) % s_step_goal;
   
   int cell_index = 0;
@@ -378,9 +291,8 @@ static void draw_step_bar(GContext *ctx, int col, int row) {
       int r_from_bottom = diag - c;
       if (r_from_bottom >= 0 && r_from_bottom <= 4) {
         int r = 4 - r_from_bottom;
-        int x = s_grid_offset_x + (col + c) * CELL_SIZE;
-        int y = s_grid_offset_y + (row + r) * CELL_SIZE;
-        
+        int x = s_gp.offset_x + (col + c) * CELL_SIZE;
+        int y = s_gp.offset_y + (row + r) * CELL_SIZE;
         bool filled = (cell_index < filled_cells) || (cell_index == filled_cells && remainder > 0);
         draw_cell_at(ctx, x, y, filled ? CELL_FULL : CELL_PARTIAL, !filled);
         cell_index++;
@@ -395,306 +307,198 @@ static void draw_battery(GContext *ctx, int col, int row) {
   int filled_cells = (s_battery_level * total_cells) / 100;
   int remainder = (s_battery_level * total_cells) % 100;
   
-  int cell_index = 0;
-  for (int r = 0; r < 3; r++) {
-    for (int c = 0; c < 2; c++) {
+  for (int i = 0; i < total_cells; i++) {
+    int r = i / 2, c = i % 2;
+    int x = s_gp.offset_x + (col + c) * CELL_SIZE;
+    int y = s_gp.offset_y + (row + r) * CELL_SIZE;
+    int cell_from_bottom = total_cells - 1 - i;
+    
+    if (cell_from_bottom < filled_cells) {
+      draw_cell_at(ctx, x, y, CELL_FULL, false);
+    } else if (cell_from_bottom == filled_cells && remainder > 0) {
+      draw_cell_at(ctx, x, y, CELL_PARTIAL, false);
+    } else {
+      draw_cell_at(ctx, x, y, CELL_PARTIAL, true);
+    }
+  }
+}
       int x = s_grid_offset_x + (col + c) * CELL_SIZE;
       int y = s_grid_offset_y + (row + r) * CELL_SIZE;
       
       // Calculate which cell from bottom (0 = bottom, 5 = top)
       int cell_from_bottom = total_cells - 1 - cell_index;
-      
-      if (cell_from_bottom < filled_cells) {
-        // Fully filled cell - use primary color
-        draw_cell_at(ctx, x, y, CELL_FULL, false);
-      } else if (cell_from_bottom == filled_cells && remainder > 0) {
-        // Partially filled cell (transition) - use secondary color
-        draw_cell_at(ctx, x, y, CELL_PARTIAL, false);
-      } else {
-        // Empty (drained) cell - use secondary color
-        draw_cell_at(ctx, x, y, CELL_PARTIAL, true);
-      }
-      cell_index++;
-    }
-  }
-}
-
 // Draw weather module with temperature
 static void draw_weather(GContext *ctx, int col, int row, int width, int height, int temperature, bool is_celsius) {
-  // Safety checks
-  if (width < 1 || height < 1) return;
-  if (col < 0 || row < 0) return;
-  if (col >= s_grid_cols || row >= s_grid_rows) return;
+  if (width < 1 || height < 1 || col < 0 || row < 0) return;
+  if (col >= s_gp.cols || row >= s_gp.rows) return;
   
-  // Calculate number of digits in temperature
   bool is_negative = temperature < 0;
   int temp = is_negative ? -temperature : temperature;
   int num_digits = (temp >= 100) ? 3 : (temp >= 10) ? 2 : 1;
-  
-  // Calculate total width: minus sign (if negative) + digits + spacing + degree + letter
-  // Minus sign: 3 + 1 spacing (if negative)
-  int minus_width = is_negative ? 4 : 0;  // 3 for sign + 1 spacing
+  int minus_width = is_negative ? 4 : 0;
   int total_width = minus_width + (num_digits * 3) + (num_digits - 1) + 1 + 2 + 1 + 3;
-  int start_col = col + (width - total_width) / 2;  // Center horizontally
-  
-  // Safety check: ensure start_col is within bounds
+  int start_col = col + (width - total_width) / 2;
   if (start_col < 0) start_col = col;
-  if (start_col >= s_grid_cols) return;
+  if (start_col >= s_gp.cols) return;
   
   int c = start_col;
   
-  // Draw minus sign if negative
   if (is_negative) {
-    // Draw horizontal line in middle row (row 2 out of 0-4)
     for (int i = 0; i < 3; i++) {
-      int x = s_grid_offset_x + (c + i) * CELL_SIZE;
-      int y = s_grid_offset_y + (row + 2) * CELL_SIZE;
+      int x = s_gp.offset_x + (c + i) * CELL_SIZE;
+      int y = s_gp.offset_y + (row + 2) * CELL_SIZE;
       draw_cell_at(ctx, x, y, CELL_FULL, false);
     }
-    c += 3 + 1;  // 3 wide + 1 spacing
+    c += 4;
   }
   
-  // Extract digits
-  int d1 = temp / 100;
-  int d2 = (temp / 10) % 10;
-  int d3 = temp % 10;
+  int d1 = temp / 100, d2 = (temp / 10) % 10, d3 = temp % 10;
+  if (num_digits == 3) { draw_small_digit(ctx, d1, c, row, false); c += 4; }
+  if (num_digits >= 2) { draw_small_digit(ctx, d2, c, row, false); c += 4; }
+  draw_small_digit(ctx, d3, c, row, false); c += 4;
   
-  // Draw digits based on number of digits
-  if (num_digits == 3) {
-    draw_small_digit(ctx, d1, c, row, false);
-    c += 3 + 1;
-  }
-  if (num_digits >= 2) {
-    draw_small_digit(ctx, d2, c, row, false);
-    c += 3 + 1;
-  }
-  draw_small_digit(ctx, d3, c, row, false);
-  c += 3 + 1;
-  
-  // Draw degree symbol (small circle - 2x2)
-  int x = s_grid_offset_x + c * CELL_SIZE;
-  int y = s_grid_offset_y + row * CELL_SIZE;
+  // Degree symbol (2x2)
+  int x = s_gp.offset_x + c * CELL_SIZE;
+  int y = s_gp.offset_y + row * CELL_SIZE;
   draw_cell_at(ctx, x, y, CELL_PARTIAL, true);
   draw_cell_at(ctx, x + CELL_SIZE, y, CELL_PARTIAL, true);
   draw_cell_at(ctx, x, y + CELL_SIZE, CELL_PARTIAL, true);
   draw_cell_at(ctx, x + CELL_SIZE, y + CELL_SIZE, CELL_PARTIAL, true);
-  c += 2 + 1;  // 2 wide + 1 spacing
+  c += 3;
   
-  // Draw "F" or "C"
-  int letter_index = is_celsius ? 14 : 7;  // C is at index 14, F is at index 7
-  draw_small_letter(ctx, letter_index, c, row, false);
+  draw_small_letter(ctx, is_celsius ? 14 : 7, c, row, false);
 }
 
-// Canvas update procedure - draws everything directly, no buffer
+// Canvas update procedure
 static void canvas_update_proc(Layer *layer, GContext *ctx) {
-  // Draw load animation on top if active - skip normal content
   if (animations_is_active(&s_load_anim)) {
-    animations_draw(ctx, &s_load_anim,
-                   s_grid_cols, s_grid_rows,
-                   s_grid_offset_x, s_grid_offset_y,
-                   CELL_SIZE, FULL_SIZE, FULL_OFFSET,
-                   PARTIAL_SIZE, PARTIAL_OFFSET,
-                   s_fg_color, s_secondary_color);
-    return;  // Don't draw normal content during animation
+    animations_draw(ctx, &s_load_anim, &s_gp);
+    return;
   }
   
-  // Calculate layout
-  int digit_spacing = (s_grid_cols > 24) ? 1 : 0;
+  int digit_spacing = (s_gp.cols > 24) ? 1 : 0;
   int time_width = (digit_spacing == 1) ? 26 : 22;
   int small_spacing = digit_spacing;
-  int date_width = (small_spacing == 1) ? 16 : 14;  // Increased by 1 for 2-wide separator
+  int date_width = (small_spacing == 1) ? 16 : 14;
   
-  // Check if weather should use step/battery position
   bool weather_in_step_position = s_flags.show_weather && !s_flags.show_steps && !s_flags.show_battery;
-  
-  // Calculate vertical offset for weather module
-  // Only move face down if weather is enabled AND (steps OR battery are shown)
   int vertical_offset = (s_flags.show_weather && !weather_in_step_position) ? 3 : 0;
   
-  // Center time vertically with date below (adjusted for weather)
-  int time_row = ((s_grid_rows - 7) / 2) + vertical_offset;  // 7 = time height
-  int step_row = time_row - 5 - 2;        // 5 = step bar height, 2 = gap
-  int date_row = time_row + 7 + 2;        // 2 row gap after time
+  int time_row = ((s_gp.rows - 7) / 2) + vertical_offset;
+  int step_row = time_row - 5 - 2;
+  int date_row = time_row + 7 + 2;
+  if (step_row < 0) step_row = 0;
   
-  // Safety check: ensure step_row is non-negative
-  if (step_row < 0) {
-    step_row = 0;
-  }
+  int time_col = (s_gp.cols - time_width) / 2;
+  int date_col = (s_gp.cols - date_width) / 2 - 1;
   
-  int time_col = (s_grid_cols - time_width) / 2;
-  int date_col = (s_grid_cols - date_width) / 2 - 1;  // Moved one space left
-  
-  // Weather module (if enabled)
   if (s_flags.show_weather) {
     int weather_row, weather_col, weather_width, weather_height;
-    
     if (weather_in_step_position) {
-      // Weather replaces step/battery position - use step bar area
-      weather_row = step_row;
-      weather_col = time_col;
-      weather_width = time_width;
-      weather_height = 5;  // Same height as step bar
+      weather_row = step_row; weather_col = time_col;
+      weather_width = time_width; weather_height = 5;
     } else {
-      // Weather at top position
-      weather_row = 2;  // 2 grid spaces from top
-      weather_col = 5;  // 5 grid spaces from left
-      weather_width = s_grid_cols - 10;  // 5 from each side
-      weather_height = step_row - weather_row - 2;  // 2 grid spaces padding from step tracker
-      
-      // Safety check: ensure weather_width is positive
-      if (weather_width < 1) {
-        weather_width = 1;
-      }
-      
-      // Safety check: ensure weather_height is positive
-      if (weather_height < 1) {
-        weather_height = 1;
-      }
+      weather_row = 2; weather_col = 5;
+      weather_width = s_gp.cols - 10;
+      weather_height = step_row - weather_row - 2;
+      if (weather_width < 1) weather_width = 1;
+      if (weather_height < 1) weather_height = 1;
     }
-    
-    // Convert temperature if needed (data is always in Celsius)
-    int display_temp = s_weather_temp;
-    if (s_flags.weather_use_fahrenheit) {
-      // Convert C to F: (C * 9/5) + 32
-      display_temp = (s_weather_temp * 9 / 5) + 32;
-    }
-    
+    int display_temp = s_flags.weather_use_fahrenheit ? (s_weather_temp * 9 / 5) + 32 : s_weather_temp;
     draw_weather(ctx, weather_col, weather_row, weather_width, weather_height, display_temp, !s_flags.weather_use_fahrenheit);
   }
   
-  // Step bar (above time, aligned with left side of time)
   if (s_flags.show_steps && s_flags.health_available) {
     draw_step_bar(ctx, time_col, step_row);
   }
   
-  // Battery indicator (right side, aligned with right edge of time, vertically centered with step bar)
   if (s_flags.show_battery) {
-    int battery_col = time_col + time_width - 2;  // 2 cols wide, align right edge
-    int battery_row = step_row + 1;  // Center in 5-row step area (5-3)/2 = 1
+    int battery_col = time_col + time_width - 2;
+    int battery_row = step_row + 1;
     draw_battery(ctx, battery_col, battery_row);
   }
   
   // Time digits
-  int h1 = s_hour / 10;
-  int h2 = s_hour % 10;
-  int m1 = s_minute / 10;
-  int m2 = s_minute % 10;
-  
+  int h1 = s_hour / 10, h2 = s_hour % 10;
+  int m1 = s_minute / 10, m2 = s_minute % 10;
   int col = time_col;
   
-  // Hour tens (use secondary color if zero)
+  // Hour tens (gray if zero)
   bool h1_use_gray = (h1 == 0);
-  if (s_anim_progress[0] < 1.0f) {
+  if (s_anim_progress[0] < 10) {
     draw_digit_animated(ctx, s_anim_old_digits[0], s_anim_new_digits[0], s_anim_progress[0], col, time_row, h1_use_gray);
   } else {
     draw_digit(ctx, h1, col, time_row, h1_use_gray);
   }
   col += 5 + digit_spacing;
   
-  // Hour ones
-  if (s_anim_progress[1] < 1.0f) {
+  if (s_anim_progress[1] < 10) {
     draw_digit_animated(ctx, s_anim_old_digits[1], s_anim_new_digits[1], s_anim_progress[1], col, time_row, false);
   } else {
     draw_digit(ctx, h2, col, time_row, false);
   }
   col += 5 + digit_spacing;
   
-  // Colon (shift right by 1 on larger screens)
-  int colon_offset = 0;
-  draw_colon(ctx, col + colon_offset, time_row);
+  draw_colon(ctx, col, time_row);
   col += 2 + digit_spacing;
   
-  // Minutes
-  if (s_anim_progress[2] < 1.0f) {
+  if (s_anim_progress[2] < 10) {
     draw_digit_animated(ctx, s_anim_old_digits[2], s_anim_new_digits[2], s_anim_progress[2], col, time_row, false);
   } else {
     draw_digit(ctx, m1, col, time_row, false);
   }
   col += 5 + digit_spacing;
-  if (s_anim_progress[3] < 1.0f) {
+  
+  if (s_anim_progress[3] < 10) {
     draw_digit_animated(ctx, s_anim_old_digits[3], s_anim_new_digits[3], s_anim_progress[3], col, time_row, false);
   } else {
     draw_digit(ctx, m2, col, time_row, false);
   }
   
-  // Date digits (if enabled)
+  // Date (if enabled)
   if (s_flags.show_date) {
     col = date_col;
-    
-    // Helper to draw a date component based on type
-    // 0=MonthName, 1=WeekDay, 2=WeekNum, 3=Day, 4=Month, 5=Year
     for (int side = 0; side < 2; side++) {
       uint8_t date_type = (side == 0) ? s_flags.date_left : s_flags.date_right;
-      
       switch (date_type) {
-        case 0: // Month Name (2 letters)
+        case 0: // Month Name
           if (s_month >= 1 && s_month <= 12) {
             draw_small_letter(ctx, month_letters[s_month - 1][0], col, date_row, true);
             col += 3 + small_spacing;
             draw_small_letter(ctx, month_letters[s_month - 1][1], col, date_row, true);
           }
           break;
-        case 1: // Week Day (2 letters)
+        case 1: // Week Day
           if (s_weekday <= 6) {
             draw_small_letter(ctx, weekday_letters[s_weekday][0], col, date_row, true);
             col += 3 + small_spacing;
             draw_small_letter(ctx, weekday_letters[s_weekday][1], col, date_row, true);
           }
           break;
-        case 2: // Week of the Year
-          draw_small_digit(ctx, s_week / 10, col, date_row, true);
-          col += 3 + small_spacing;
-          draw_small_digit(ctx, s_week % 10, col, date_row, true);
-          break;
-        case 3: // Day
-          draw_small_digit(ctx, s_day / 10, col, date_row, true);
-          col += 3 + small_spacing;
-          draw_small_digit(ctx, s_day % 10, col, date_row, true);
-          break;
-        case 4: // Month (number)
-          draw_small_digit(ctx, s_month / 10, col, date_row, true);
-          col += 3 + small_spacing;
-          draw_small_digit(ctx, s_month % 10, col, date_row, true);
-          break;
-        case 5: // Year (last 2 digits)
-          draw_small_digit(ctx, s_year / 10, col, date_row, true);
-          col += 3 + small_spacing;
-          draw_small_digit(ctx, s_year % 10, col, date_row, true);
-          break;
+        case 2: draw_small_digit(ctx, s_week / 10, col, date_row, true); col += 3 + small_spacing; draw_small_digit(ctx, s_week % 10, col, date_row, true); break;
+        case 3: draw_small_digit(ctx, s_day / 10, col, date_row, true); col += 3 + small_spacing; draw_small_digit(ctx, s_day % 10, col, date_row, true); break;
+        case 4: draw_small_digit(ctx, s_month / 10, col, date_row, true); col += 3 + small_spacing; draw_small_digit(ctx, s_month % 10, col, date_row, true); break;
+        case 5: draw_small_digit(ctx, s_year / 10, col, date_row, true); col += 3 + small_spacing; draw_small_digit(ctx, s_year % 10, col, date_row, true); break;
       }
       col += 3 + small_spacing;
-      
-      // Draw separator after left side
-      if (side == 0) {
-        draw_separator(ctx, col, date_row, true);
-        col += 2 + small_spacing;
-      }
+      if (side == 0) { draw_separator(ctx, col, date_row, true); col += 2 + small_spacing; }
     }
   }
   
-  // Corners
   draw_corners(ctx);
 }
 
 // Animation timer callback
 static void animation_timer_callback(void *data) {
   bool still_animating = false;
-  
   for (int i = 0; i < NUM_DIGITS; i++) {
-    if (s_anim_progress[i] < 1.0f) {
-      s_anim_progress[i] += ANIM_STEP;
-      s_anim_progress[i] = (s_anim_progress[i] >= 1.0f) ? 1.0f : s_anim_progress[i];
-      still_animating |= (s_anim_progress[i] < 1.0f);
+    if (s_anim_progress[i] < 10) {
+      s_anim_progress[i]++;
+      still_animating |= (s_anim_progress[i] < 10);
     }
   }
-  
   layer_mark_dirty(s_canvas_layer);
-  
-  if (still_animating) {
-    s_anim_timer = app_timer_register(ANIM_INTERVAL_MS, animation_timer_callback, NULL);
-  } else {
-    s_anim_timer = NULL;
-  }
+  s_anim_timer = still_animating ? app_timer_register(ANIM_INTERVAL_MS, animation_timer_callback, NULL) : NULL;
 }
 
 // Update cached time
@@ -706,28 +510,18 @@ static void update_time(void) {
   uint8_t new_minute = (uint8_t)t->tm_min;
   s_day = (uint8_t)t->tm_mday;
   s_month = (uint8_t)(t->tm_mon + 1);
-  s_year = (uint8_t)(t->tm_year % 100);  // Last 2 digits of year
+  s_year = (uint8_t)(t->tm_year % 100);
   
   // ISO 8601 week calculation
-  // Week 1 is the week with the first Thursday of the year
-  int day_of_week = t->tm_wday == 0 ? 7 : t->tm_wday; // Monday=1, Sunday=7
-  int day_of_year = t->tm_yday + 1; // Make 1-indexed
+  int day_of_week = t->tm_wday == 0 ? 7 : t->tm_wday;
+  int day_of_year = t->tm_yday + 1;
   int week_number = (day_of_year - day_of_week + 10) / 7;
-  
-  if (week_number == 0) {
-    // This day belongs to the last week of the previous year
-    week_number = 52; // Simplified - could be 53 in some years
-  } else if (week_number == 53) {
-    // Check if this really belongs to week 1 of next year
+  if (week_number == 0) week_number = 52;
+  else if (week_number == 53) {
     int jan1_day = (day_of_week - day_of_year % 7 + 7) % 7;
-    if (jan1_day >= 1 && jan1_day <= 3) {
-      week_number = 1;
-    }
+    if (jan1_day >= 1 && jan1_day <= 3) week_number = 1;
   }
-  
   s_week = (uint8_t)week_number;
-  
-  // Store weekday (0=Monday, 6=Sunday)
   s_weekday = t->tm_wday == 0 ? 6 : t->tm_wday - 1;
   
   if (!s_flags.use_24h) {
@@ -745,11 +539,10 @@ static void update_time(void) {
       if (old_digits[i] != new_digits[i]) {
         s_anim_old_digits[i] = old_digits[i];
         s_anim_new_digits[i] = new_digits[i];
-        s_anim_progress[i] = 0.0f;
+        s_anim_progress[i] = 0;
         needs_animation = true;
       }
     }
-    
     if (needs_animation && !s_anim_timer) {
       s_anim_timer = app_timer_register(ANIM_INTERVAL_MS, animation_timer_callback, NULL);
     }
@@ -945,6 +738,8 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   
   // Save and update
   save_settings();
+  s_gp.fg_color = s_fg_color;
+  s_gp.secondary_color = s_secondary_color;
   window_set_background_color(s_window, s_bg_color);
   layer_mark_dirty(s_canvas_layer);
 }
@@ -953,27 +748,29 @@ static void prv_window_load(Window *window) {
   Layer *window_layer = window_get_root_layer(window);
   GRect bounds = layer_get_bounds(window_layer);
   
-  s_grid_cols = bounds.size.w / CELL_SIZE;
-  s_grid_rows = bounds.size.h / CELL_SIZE;
-  s_grid_offset_x = (bounds.size.w - s_grid_cols * CELL_SIZE) / 2;
-  s_grid_offset_y = (bounds.size.h - s_grid_rows * CELL_SIZE) / 2;
+  // Initialize GridParams structure
+  s_gp.cols = bounds.size.w / CELL_SIZE;
+  s_gp.rows = bounds.size.h / CELL_SIZE;
+  s_gp.offset_x = (bounds.size.w - s_gp.cols * CELL_SIZE) / 2;
+  s_gp.offset_y = (bounds.size.h - s_gp.rows * CELL_SIZE) / 2;
+  s_gp.cell_size = CELL_SIZE;
+  s_gp.full_size = FULL_SIZE;
+  s_gp.full_offset = FULL_OFFSET;
+  s_gp.partial_size = PARTIAL_SIZE;
+  s_gp.partial_offset = PARTIAL_OFFSET;
+  s_gp.fg_color = s_fg_color;
+  s_gp.secondary_color = s_secondary_color;
   
   s_canvas_layer = layer_create(bounds);
   layer_set_update_proc(s_canvas_layer, canvas_update_proc);
   layer_add_child(window_layer, s_canvas_layer);
   
-  // Initialize and start load animation based on setting
   animations_init(&s_load_anim);
   s_load_anim.layer = s_canvas_layer;
   
-  if (s_load_animation == 1) {
-    animations_start_load(&s_load_anim, ANIM_WAVE_FILL);
-  } else if (s_load_animation == 2) {
-    animations_start_load(&s_load_anim, ANIM_RANDOM_POP);
-  } else if (s_load_animation == 3) {
-    animations_start_load(&s_load_anim, ANIM_MATRIX);
+  if (s_load_animation >= 1 && s_load_animation <= 3) {
+    animations_start_load(&s_load_anim, (AnimationType)s_load_animation);
   }
-  // If s_load_animation == 0, don't start any animation
   
   update_time();
 }
@@ -984,7 +781,6 @@ static void prv_window_unload(Window *window) {
 }
 
 static void prv_init(void) {
-  // Load saved settings
   load_settings();
   
   s_window = window_create();
@@ -996,25 +792,17 @@ static void prv_init(void) {
   window_stack_push(s_window, true);
   tick_timer_service_subscribe(MINUTE_UNIT, tick_handler);
   
-  // Subscribe to battery service
   battery_state_service_subscribe(battery_handler);
   s_battery_level = (uint8_t)battery_state_service_peek().charge_percent;
-  
-  // Subscribe to health only if available
   s_flags.health_available = health_service_events_subscribe(health_handler, NULL);
   
-  // Open AppMessage for settings
   app_message_register_inbox_received(inbox_received_handler);
   app_message_open(128, 64);
 }
 
 static void prv_deinit(void) {
-  if (s_anim_timer) {
-    app_timer_cancel(s_anim_timer);
-  }
-  if (s_flags.health_available) {
-    health_service_events_unsubscribe();
-  }
+  if (s_anim_timer) app_timer_cancel(s_anim_timer);
+  if (s_flags.health_available) health_service_events_unsubscribe();
   battery_state_service_unsubscribe();
   tick_timer_service_unsubscribe();
   window_destroy(s_window);
