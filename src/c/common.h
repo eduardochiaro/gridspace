@@ -31,18 +31,8 @@ static inline void prng_seed(uint32_t seed) {
 // Fixed-point math helpers (8.8 format: 256 = 1.0)
 #define FP_ONE 256
 #define FP_HALF 128
-#define FLOAT_TO_FP(f) ((int16_t)((f) * FP_ONE))
-#define FP_TO_INT(fp) ((fp) >> 8)
-#define FP_MUL(a, b) (((a) * (b)) >> 8)
 
-// Cell states (2 bits each for packing)
+// Cell states
 #define CELL_EMPTY   0
 #define CELL_PARTIAL 1
 #define CELL_FULL    2
-
-// Get 2-bit cell value from packed array (4 cells per byte)
-static inline uint8_t get_packed_cell(const uint8_t *packed, int index) {
-  int byte_idx = index >> 2;  // index / 4
-  int bit_pos = (index & 3) << 1;  // (index % 4) * 2
-  return (packed[byte_idx] >> bit_pos) & 0x03;
-}

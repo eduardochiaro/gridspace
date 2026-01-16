@@ -85,60 +85,58 @@ static GColor s_secondary_color;
 #define PERSIST_KEY_SHOW_WEATHER 12
 #define PERSIST_KEY_WEATHER_UNIT 13
 
-// Packed digit patterns (5x7=35 cells, 2 bits each = 9 bytes per digit)
-// Packing: 4 cells per byte, LSB first
-static const uint8_t digit_packed[10][9] = {
-  {0x96, 0x08, 0x82, 0x20, 0x08, 0x82, 0x20, 0x68, 0x01}, // 0
-  {0x20, 0xA8, 0x20, 0x08, 0x02, 0x80, 0x20, 0x68, 0x01}, // 1
-  {0x96, 0x08, 0x80, 0x20, 0x68, 0x82, 0x20, 0x68, 0x01}, // 2
-  {0x96, 0x08, 0x80, 0x20, 0x68, 0x80, 0x20, 0x68, 0x01}, // 3
-  {0x14, 0x28, 0x82, 0x20, 0x28, 0x80, 0x20, 0x10, 0x00}, // 4
-  {0x96, 0x28, 0x82, 0x00, 0x68, 0x80, 0x20, 0x68, 0x01}, // 5
-  {0x96, 0x28, 0x82, 0x00, 0xA8, 0x82, 0x20, 0x68, 0x01}, // 6
-  {0x96, 0x08, 0x80, 0x00, 0x82, 0x20, 0x08, 0x10, 0x00}, // 7
-  {0x96, 0x28, 0x82, 0x20, 0x68, 0x82, 0x20, 0x68, 0x01}, // 8
-  {0x96, 0x28, 0x82, 0x20, 0xA8, 0x80, 0x20, 0x68, 0x01}  // 9
+// Small digit patterns (3x5 for each digit 0-9)
+static const uint8_t small_digit_patterns[10][15] = {
+  {2,2,2, 2,0,2, 2,0,2, 2,0,2, 2,2,2}, // 0
+  {0,2,0, 0,2,0, 0,2,0, 0,2,0, 0,2,0}, // 1
+  {2,2,2, 0,0,2, 2,2,2, 2,0,0, 2,2,2}, // 2
+  {2,2,2, 0,0,2, 2,2,2, 0,0,2, 2,2,2}, // 3
+  {2,0,2, 2,0,2, 2,2,2, 0,0,2, 0,0,2}, // 4
+  {2,2,2, 2,0,0, 2,2,2, 0,0,2, 2,2,2}, // 5
+  {2,2,2, 2,0,0, 2,2,2, 2,0,2, 2,2,2}, // 6
+  {2,2,2, 0,0,2, 0,2,0, 0,2,0, 0,2,0}, // 7
+  {2,2,2, 2,0,2, 2,2,2, 2,0,2, 2,2,2}, // 8
+  {2,2,2, 2,0,2, 2,2,2, 0,0,2, 2,2,2}  // 9
 };
 
-// Small digit patterns (3x5=15 cells, 2 bits each = 4 bytes per digit)
-static const uint8_t small_digit_packed[10][4] = {
-  {0xAA, 0x8A, 0xA2, 0x0A}, // 0
-  {0x28, 0x82, 0x20, 0x08}, // 1
-  {0xAA, 0x20, 0x8A, 0x0A}, // 2
-  {0xAA, 0x20, 0x2A, 0x0A}, // 3
-  {0xA2, 0xA2, 0x20, 0x08}, // 4
-  {0xAA, 0x82, 0x20, 0x0A}, // 5
-  {0xAA, 0x82, 0xA2, 0x0A}, // 6
-  {0xAA, 0x20, 0x28, 0x08}, // 7
-  {0xAA, 0xA2, 0xA2, 0x0A}, // 8
-  {0xAA, 0xA2, 0x20, 0x0A}  // 9
+// Small letter patterns (3x5) for weekday and month names
+static const uint8_t small_letter_patterns[19][15] = {
+  {2,0,2, 2,2,2, 2,2,2, 2,0,2, 2,0,2}, // M  0
+  {2,2,2, 2,0,2, 2,0,2, 2,0,2, 2,2,2}, // O  1
+  {2,2,2, 0,2,0, 0,2,0, 0,2,0, 0,2,0}, // T  2
+  {2,0,2, 2,0,2, 2,0,2, 2,0,2, 2,2,2}, // U  3
+  {2,0,2, 2,0,2, 2,2,2, 2,2,2, 2,0,2}, // W  4
+  {2,2,2, 2,0,0, 2,2,2, 2,0,0, 2,2,2}, // E  5
+  {2,0,2, 2,0,2, 2,2,2, 2,0,2, 2,0,2}, // H  6
+  {2,2,2, 2,0,0, 2,2,2, 2,0,0, 2,0,0}, // F  7
+  {2,2,2, 2,0,2, 2,2,2, 2,2,0, 2,0,2}, // R  8
+  {2,2,2, 2,0,0, 2,2,2, 0,0,2, 2,2,2}, // S  9
+  {2,2,2, 2,0,2, 2,2,2, 2,0,2, 2,0,2}, // A  10
+  {0,0,2, 0,0,2, 0,0,2, 2,0,2, 2,2,2}, // J  11
+  {2,2,2, 2,0,2, 2,2,2, 2,0,0, 2,0,0}, // P  12
+  {2,2,2, 2,0,0, 2,0,2, 2,0,2, 2,2,2}, // G  13
+  {2,2,2, 2,0,0, 2,0,0, 2,0,0, 2,2,2}, // C  14
+  {2,0,2, 2,2,2, 2,2,2, 2,0,2, 2,0,2}, // N  15
+  {2,2,0, 2,0,2, 2,0,2, 2,0,2, 2,2,0}, // D  16
+  {2,0,2, 2,0,2, 0,2,0, 0,2,0, 0,2,0}, // Y  17
+  {2,0,0, 2,0,0, 2,0,0, 2,0,0, 2,2,2}  // L  18
 };
 
-// Small letter patterns (3x5=15 cells, 4 bytes each)
-// Letters: M, O, T, U, W, E, H, F, R, S, A, J, P, G, C, N, D, Y, L
-static const uint8_t small_letter_packed[19][4] = {
-  {0xA2, 0xAA, 0xA2, 0x0A}, // M
-  {0xAA, 0xA2, 0xA2, 0x0A}, // O
-  {0xAA, 0x28, 0x28, 0x08}, // T
-  {0xA2, 0xA2, 0xA2, 0x0A}, // U
-  {0xA2, 0xA2, 0xAA, 0x0A}, // W
-  {0xAA, 0x82, 0x82, 0x0A}, // E
-  {0xA2, 0xA2, 0xA2, 0x0A}, // H (same structure as U)
-  {0xAA, 0x82, 0x82, 0x08}, // F
-  {0xAA, 0xA2, 0xA8, 0x0A}, // R
-  {0xAA, 0x82, 0x20, 0x0A}, // S
-  {0xAA, 0xA2, 0xA2, 0x0A}, // A
-  {0x20, 0x20, 0xA2, 0x0A}, // J
-  {0xAA, 0xA2, 0x82, 0x08}, // P
-  {0xAA, 0x82, 0xA2, 0x0A}, // G
-  {0xAA, 0x82, 0x82, 0x0A}, // C
-  {0xA2, 0xAA, 0xA2, 0x0A}, // N
-  {0xA8, 0xA2, 0xA2, 0x0A}, // D
-  {0xA2, 0xA2, 0x28, 0x08}, // Y
-  {0x82, 0x82, 0x82, 0x0A}  // L
+// Digit patterns (5x7 for each digit 0-9)
+static const uint8_t digit_patterns[10][35] = {
+  {1,2,2,2,1, 2,0,0,0,2, 2,0,0,0,2, 2,0,0,0,2, 2,0,0,0,2, 2,0,0,0,2, 1,2,2,2,1}, // 0
+  {0,0,2,0,0, 1,2,2,0,0, 0,0,2,0,0, 0,0,2,0,0, 0,0,2,0,0, 0,0,2,0,0, 1,2,2,2,1}, // 1
+  {1,2,2,2,1, 0,0,0,0,2, 0,0,0,0,2, 1,2,2,2,1, 2,0,0,0,0, 2,0,0,0,0, 1,2,2,2,1}, // 2
+  {1,2,2,2,1, 0,0,0,0,2, 0,0,0,0,2, 0,1,2,2,1, 0,0,0,0,2, 0,0,0,0,2, 1,2,2,2,1}, // 3
+  {1,0,0,0,1, 2,0,0,0,2, 2,0,0,0,2, 1,2,2,2,2, 0,0,0,0,2, 0,0,0,0,2, 0,0,0,0,1}, // 4
+  {1,2,2,2,1, 2,0,0,0,0, 2,0,0,0,0, 1,2,2,2,1, 0,0,0,0,2, 0,0,0,0,2, 1,2,2,2,1}, // 5
+  {1,2,2,2,1, 2,0,0,0,0, 2,0,0,0,0, 2,2,2,2,1, 2,0,0,0,2, 2,0,0,0,2, 1,2,2,2,1}, // 6
+  {1,2,2,2,1, 0,0,0,0,2, 0,0,0,0,2, 0,0,0,2,0, 0,0,2,0,0, 0,0,2,0,0, 0,0,1,0,0}, // 7
+  {1,2,2,2,1, 2,0,0,0,2, 2,0,0,0,2, 1,2,2,2,1, 2,0,0,0,2, 2,0,0,0,2, 1,2,2,2,1}, // 8
+  {1,2,2,2,1, 2,0,0,0,2, 2,0,0,0,2, 1,2,2,2,2, 0,0,0,0,2, 0,0,0,0,2, 1,2,2,2,1}  // 9
 };
 
-// Weekday/month lookup tables (unchanged - already compact)
+// Weekday/month lookup tables
 static const uint8_t weekday_letters[7][2] = {
   {0, 1}, {2, 3}, {4, 5}, {2, 6}, {7, 8}, {9, 10}, {9, 3}
 };
@@ -177,65 +175,72 @@ static inline void draw_checkerboard_2x2(GContext *ctx, int col, int row, bool i
   }
 }
 
-// Draw a large digit from packed data (5x7)
+// Draw a large digit (5x7)
 static void draw_digit(GContext *ctx, int digit, int col, int row, bool use_gray) {
   if (digit < 0 || digit > 9) return;
-  const uint8_t *packed = digit_packed[digit];
-  for (int i = 0; i < 35; i++) {
-    uint8_t state = get_packed_cell(packed, i);
-    if (state != CELL_EMPTY) {
-      int x = s_gp.offset_x + (col + (i % 5)) * CELL_SIZE;
-      int y = s_gp.offset_y + (row + (i / 5)) * CELL_SIZE;
-      draw_cell_at(ctx, x, y, state, use_gray);
+  const uint8_t *pattern = digit_patterns[digit];
+  for (int r = 0; r < 7; r++) {
+    for (int c = 0; c < 5; c++) {
+      uint8_t state = pattern[r * 5 + c];
+      if (state != CELL_EMPTY) {
+        int x = s_gp.offset_x + (col + c) * CELL_SIZE;
+        int y = s_gp.offset_y + (row + r) * CELL_SIZE;
+        draw_cell_at(ctx, x, y, state, use_gray);
+      }
     }
   }
 }
 
-// Draw animated digit transition using fixed-point progress (0-10 steps)
+// Draw animated digit transition (0-10 progress steps)
 static void draw_digit_animated(GContext *ctx, int old_digit, int new_digit, uint8_t progress, int col, int row, bool use_gray) {
   if (old_digit < 0 || old_digit > 9 || new_digit < 0 || new_digit > 9) return;
-  const uint8_t *old_packed = digit_packed[old_digit];
-  const uint8_t *new_packed = digit_packed[new_digit];
-  int transition_row = (progress * 7) / 10;  // 0-7 based on 0-10 progress
+  const uint8_t *old_pattern = digit_patterns[old_digit];
+  const uint8_t *new_pattern = digit_patterns[new_digit];
+  int transition_row = (progress * 7) / 10;
   
-  for (int i = 0; i < 35; i++) {
-    int r = i / 5, c = i % 5;
-    uint8_t old_state = get_packed_cell(old_packed, i);
-    uint8_t new_state = get_packed_cell(new_packed, i);
-    uint8_t state = (r < transition_row) ? new_state : 
-                    (r == transition_row && old_state != new_state) ? CELL_PARTIAL : old_state;
-    if (state != CELL_EMPTY) {
-      int x = s_gp.offset_x + (col + c) * CELL_SIZE;
-      int y = s_gp.offset_y + (row + r) * CELL_SIZE;
-      draw_cell_at(ctx, x, y, state, use_gray);
+  for (int r = 0; r < 7; r++) {
+    for (int c = 0; c < 5; c++) {
+      uint8_t old_state = old_pattern[r * 5 + c];
+      uint8_t new_state = new_pattern[r * 5 + c];
+      uint8_t state = (r < transition_row) ? new_state : 
+                      (r == transition_row && old_state != new_state) ? CELL_PARTIAL : old_state;
+      if (state != CELL_EMPTY) {
+        int x = s_gp.offset_x + (col + c) * CELL_SIZE;
+        int y = s_gp.offset_y + (row + r) * CELL_SIZE;
+        draw_cell_at(ctx, x, y, state, use_gray);
+      }
     }
   }
 }
 
-// Draw a small digit from packed data (3x5)
+// Draw a small digit (3x5)
 static void draw_small_digit(GContext *ctx, int digit, int col, int row, bool use_gray) {
   if (digit < 0 || digit > 9) return;
-  const uint8_t *packed = small_digit_packed[digit];
-  for (int i = 0; i < 15; i++) {
-    uint8_t state = get_packed_cell(packed, i);
-    if (state != CELL_EMPTY) {
-      int x = s_gp.offset_x + (col + (i % 3)) * CELL_SIZE;
-      int y = s_gp.offset_y + (row + (i / 3)) * CELL_SIZE;
-      draw_cell_at(ctx, x, y, state, use_gray);
+  const uint8_t *pattern = small_digit_patterns[digit];
+  for (int r = 0; r < 5; r++) {
+    for (int c = 0; c < 3; c++) {
+      uint8_t state = pattern[r * 3 + c];
+      if (state != CELL_EMPTY) {
+        int x = s_gp.offset_x + (col + c) * CELL_SIZE;
+        int y = s_gp.offset_y + (row + r) * CELL_SIZE;
+        draw_cell_at(ctx, x, y, state, use_gray);
+      }
     }
   }
 }
 
-// Draw a small letter from packed data (3x5)
+// Draw a small letter (3x5)
 static void draw_small_letter(GContext *ctx, int letter_index, int col, int row, bool use_gray) {
   if (letter_index < 0 || letter_index > 18) return;
-  const uint8_t *packed = small_letter_packed[letter_index];
-  for (int i = 0; i < 15; i++) {
-    uint8_t state = get_packed_cell(packed, i);
-    if (state != CELL_EMPTY) {
-      int x = s_gp.offset_x + (col + (i % 3)) * CELL_SIZE;
-      int y = s_gp.offset_y + (row + (i / 3)) * CELL_SIZE;
-      draw_cell_at(ctx, x, y, state, use_gray);
+  const uint8_t *pattern = small_letter_patterns[letter_index];
+  for (int r = 0; r < 5; r++) {
+    for (int c = 0; c < 3; c++) {
+      uint8_t state = pattern[r * 3 + c];
+      if (state != CELL_EMPTY) {
+        int x = s_gp.offset_x + (col + c) * CELL_SIZE;
+        int y = s_gp.offset_y + (row + r) * CELL_SIZE;
+        draw_cell_at(ctx, x, y, state, use_gray);
+      }
     }
   }
 }
@@ -322,11 +327,7 @@ static void draw_battery(GContext *ctx, int col, int row) {
     }
   }
 }
-      int x = s_grid_offset_x + (col + c) * CELL_SIZE;
-      int y = s_grid_offset_y + (row + r) * CELL_SIZE;
-      
-      // Calculate which cell from bottom (0 = bottom, 5 = top)
-      int cell_from_bottom = total_cells - 1 - cell_index;
+
 // Draw weather module with temperature
 static void draw_weather(GContext *ctx, int col, int row, int width, int height, int temperature, bool is_celsius) {
   if (width < 1 || height < 1 || col < 0 || row < 0) return;
