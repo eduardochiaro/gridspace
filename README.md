@@ -9,6 +9,8 @@ A minimalist Pebble watchface with a distinctive pixel-grid aesthetic. Every ele
 
 ### Pebble Time/Time Steel
 ![Basalt animation](assets/basalt_3.gif)
+![Basalt 4](assets/basalt_4.png)
+![Basalt 2](assets/basalt_5.png)
 ![Basalt 1](assets/basalt_1.png)
 ![Basalt 2](assets/basalt_2.png)
 
