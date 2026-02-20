@@ -23,7 +23,8 @@
       "chalk",
       "diorite",
       "emery",
-      "flint"
+      "flint",
+      "gabbro"
     ],
     "capabilities": [
       "health"

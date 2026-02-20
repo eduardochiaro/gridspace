@@ -9,6 +9,12 @@
   #define FULL_OFFSET 1
   #define PARTIAL_SIZE 2
   #define PARTIAL_OFFSET 2
+#elif PBL_PLATFORM_GABBRO
+  #define CELL_SIZE 7
+  #define FULL_SIZE 5
+  #define FULL_OFFSET 2
+  #define PARTIAL_SIZE 3
+  #define PARTIAL_OFFSET 3
 #else
   #define CELL_SIZE 5
   #define FULL_SIZE 3
@@ -538,6 +544,9 @@ static void canvas_update_proc(Layer *layer, GContext *ctx) {
       // Weather at top position
       weather_row = 2;  // 2 grid spaces from top
       weather_col = 5;  // 5 grid spaces from left
+      if (PBL_PLATFORM_TYPE_CURRENT == PlatformTypeEmery || PBL_PLATFORM_TYPE_CURRENT == PlatformTypeGabbro) {
+        weather_row = 4;  // Move further down on wider screens
+      }
       weather_width = s_grid_cols - 10;  // 5 from each side
       weather_height = step_row - weather_row - 2;  // 2 grid spaces padding from step tracker
       
