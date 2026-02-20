@@ -89,6 +89,12 @@
         "label": "Use 24-Hour Format"
       },
       {
+        "type": "toggle",
+        "messageKey": "SHOW_CORNERS",
+        "defaultValue": true,
+        "label": "Show Corner Decorations"
+      },
+      {
         "type": "select",
         "messageKey": "LOAD_ANIMATION",
         "defaultValue": "2",

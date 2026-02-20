@@ -71,6 +71,7 @@ static struct {
   uint8_t use_24h:1;
   uint8_t show_weather:1;
   uint8_t weather_use_fahrenheit:1;
+  uint8_t show_corners:1;
   uint8_t date_left:3;   // 0=MonthName, 1=WeekDay, 2=WeekNum, 3=Day, 4=Month, 5=Year
   uint8_t date_right:3;  // 0=MonthName, 1=WeekDay, 2=WeekNum, 3=Day, 4=Month, 5=Year
 } s_flags = {
@@ -81,6 +82,7 @@ static struct {
   .use_24h = 1,
   .show_weather = 0,
   .weather_use_fahrenheit = 0,
+  .show_corners = 1,
   .date_left = 3,   // Day
   .date_right = 4   // Month
 };
@@ -104,6 +106,7 @@ static GColor s_secondary_color;
 #define PERSIST_KEY_LOAD_ANIMATION 11
 #define PERSIST_KEY_SHOW_WEATHER 12
 #define PERSIST_KEY_WEATHER_UNIT 13
+#define PERSIST_KEY_SHOW_CORNERS 14
 
 // Small digit patterns (3x5 for each digit 0-9) - using only full cells
 static const uint8_t small_digit_patterns[10][15] = {
@@ -336,6 +339,38 @@ static void draw_colon(GContext *ctx, int col, int row) {
 
 // Draw corner decorations
 static void draw_corners(GContext *ctx) {
+#ifdef PBL_ROUND
+  // Round screen: 12 clock markers around the circle edge
+  // sin/cos values * 1000 for angles 0,30,60,...,330 (clock positions 12,1,2,...,11)
+  static const int16_t sin_table[12] = {0, 500, 866, 1000, 866, 500, 0, -500, -866, -1000, -866, -500};
+  static const int16_t cos_table[12] = {1000, 866, 500, 0, -500, -866, -1000, -866, -500, 0, 500, 866};
+  
+  int screen_w = s_grid_cols * CELL_SIZE + 2 * s_grid_offset_x;
+  int screen_h = s_grid_rows * CELL_SIZE + 2 * s_grid_offset_y;
+  int center_px = screen_w / 2;
+  int center_py = screen_h / 2;
+  int mark_radius = (screen_w / 2) - CELL_SIZE - CELL_SIZE / 2;
+  
+  for (int i = 0; i < 12; i++) {
+    // Clock position: x = center + R*sin, y = center - R*cos
+    int px = center_px + (mark_radius * sin_table[i]) / 1000;
+    int py = center_py - (mark_radius * cos_table[i]) / 1000;
+    
+    // Snap to nearest grid cell
+    int gc = (px - s_grid_offset_x) / CELL_SIZE;
+    int gr = (py - s_grid_offset_y) / CELL_SIZE;
+    if (gc < 0) gc = 0;
+    if (gc >= s_grid_cols) gc = s_grid_cols - 1;
+    if (gr < 0) gr = 0;
+    if (gr >= s_grid_rows) gr = s_grid_rows - 1;
+    
+    // 12=full, 1=partial, 2=full, 3=partial, ...
+    uint8_t state = (i % 2 == 0) ? CELL_FULL : CELL_PARTIAL;
+    draw_cell_at(ctx, s_grid_offset_x + gc * CELL_SIZE,
+                 s_grid_offset_y + gr * CELL_SIZE, state, true);
+  }
+#else
+  // Rectangular screen: corner decorations
   int x0 = s_grid_offset_x;
   int y0 = s_grid_offset_y;
   int xn = s_grid_offset_x + (s_grid_cols - 1) * CELL_SIZE;
@@ -368,6 +403,7 @@ static void draw_corners(GContext *ctx) {
   graphics_context_set_fill_color(ctx, s_secondary_color);
   graphics_fill_rect(ctx, GRect(xn - CELL_SIZE + FULL_OFFSET, yn + FULL_OFFSET, FULL_SIZE, FULL_SIZE), 0, GCornerNone);
   graphics_fill_rect(ctx, GRect(xn + FULL_OFFSET, yn - CELL_SIZE + FULL_OFFSET, FULL_SIZE, FULL_SIZE), 0, GCornerNone);
+#endif
 }
 
 // Draw step bar (5 rows x 15 cols, fills diagonally from bottom-left)
@@ -682,7 +718,9 @@ static void canvas_update_proc(Layer *layer, GContext *ctx) {
   }
   
   // Corners
-  draw_corners(ctx);
+  if (s_flags.show_corners) {
+    draw_corners(ctx);
+  }
 }
 
 // Animation timer callback
@@ -840,6 +878,9 @@ static void load_settings(void) {
   if (persist_exists(PERSIST_KEY_WEATHER_UNIT)) {
     s_flags.weather_use_fahrenheit = persist_read_bool(PERSIST_KEY_WEATHER_UNIT);
   }
+  if (persist_exists(PERSIST_KEY_SHOW_CORNERS)) {
+    s_flags.show_corners = persist_read_bool(PERSIST_KEY_SHOW_CORNERS);
+  }
 }
 
 // Save settings to persistent storage
@@ -857,6 +898,7 @@ static void save_settings(void) {
   persist_write_int(PERSIST_KEY_LOAD_ANIMATION, s_load_animation);
   persist_write_bool(PERSIST_KEY_SHOW_WEATHER, s_flags.show_weather);
   persist_write_bool(PERSIST_KEY_WEATHER_UNIT, s_flags.weather_use_fahrenheit);
+  persist_write_bool(PERSIST_KEY_SHOW_CORNERS, s_flags.show_corners);
 }
 
 // AppMessage inbox received handler
@@ -944,6 +986,12 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   Tuple *temp_t = dict_find(iter, MESSAGE_KEY_WEATHER_TEMPERATURE);
   if (temp_t) {
     s_weather_temp = (int16_t)temp_t->value->int32;
+  }
+  
+  // Show corners
+  Tuple *corners_t = dict_find(iter, MESSAGE_KEY_SHOW_CORNERS);
+  if (corners_t) {
+    s_flags.show_corners = corners_t->value->int32 == 1;
   }
   
   // Weather unit (C or F)

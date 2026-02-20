@@ -1,7 +1,7 @@
 {
   "name": "gridspace",
   "author": "Eduardo Chiaro",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "keywords": [
     "pebble-app",
     "watchface",
@@ -46,7 +46,8 @@
       "LOAD_ANIMATION",
       "SHOW_WEATHER",
       "WEATHER_TEMPERATURE",
-      "WEATHER_UNIT"
+      "WEATHER_UNIT",
+      "SHOW_CORNERS"
     ],
     "resources": {
       "media": [
