@@ -28,6 +28,9 @@ A minimalist Pebble watchface with a distinctive pixel-grid aesthetic. Every ele
 ![Emery 2](assets/emery_2.png)
 ![Emery 3](assets/emery_3.png)
 
+### Pebble Time Round 2
+![Gabbro 1](assets/gabbro_1.png)
+
 ## Store
 [Rebble App Store](https://apps.rebble.io/en_US/application/694a99bbfb639a000a570b91)
 
