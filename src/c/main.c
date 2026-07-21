@@ -462,7 +462,7 @@ static void draw_battery(GContext *ctx, int col, int row) {
 }
 
 // Draw weather module with temperature
-static void draw_weather(GContext *ctx, int col, int row, int width, int height, int temperature, bool is_celsius) {
+static void draw_weather(GContext *ctx, int col, int row, int width, int height, int temperature) {
   // Safety checks
   if (width < 1 || height < 1) return;
   if (col < 0 || row < 0) return;
@@ -473,29 +473,26 @@ static void draw_weather(GContext *ctx, int col, int row, int width, int height,
   int temp = is_negative ? -temperature : temperature;
   int num_digits = (temp >= 100) ? 3 : (temp >= 10) ? 2 : 1;
   
-  // Calculate total width: minus sign (if negative) + digits + spacing + degree + letter
-  // Minus sign: 3 + 1 spacing (if negative)
-  int minus_width = is_negative ? 4 : 0;  // 3 for sign + 1 spacing
-  int total_width = minus_width + (num_digits * 3) + (num_digits - 1) + 1 + 2 + 1 + 3;
-  int start_col = col + (width - total_width) / 2;  // Center horizontally
-  
+  // Center the digits only - minus sign and degree symbol hang off the sides
+  int digits_width = (num_digits * 3) + (num_digits - 1);
+  int start_col = col + (width - digits_width) / 2;
+
   // Safety check: ensure start_col is within bounds
   if (start_col < 0) start_col = col;
   if (start_col >= s_grid_cols) return;
-  
+
   int c = start_col;
-  
-  // Draw minus sign if negative
-  if (is_negative) {
+
+  // Draw minus sign to the left of the digits (3 wide + 1 spacing)
+  if (is_negative && start_col - 4 >= col) {
     // Draw horizontal line in middle row (row 2 out of 0-4)
     for (int i = 0; i < 3; i++) {
-      int x = s_grid_offset_x + (c + i) * CELL_SIZE;
+      int x = s_grid_offset_x + (start_col - 4 + i) * CELL_SIZE;
       int y = s_grid_offset_y + (row + 2) * CELL_SIZE;
       draw_cell_at(ctx, x, y, CELL_FULL, false);
     }
-    c += 3 + 1;  // 3 wide + 1 spacing
   }
-  
+
   // Extract digits
   int d1 = temp / 100;
   int d2 = (temp / 10) % 10;
@@ -513,18 +510,14 @@ static void draw_weather(GContext *ctx, int col, int row, int width, int height,
   draw_small_digit(ctx, d3, c, row, false);
   c += 3 + 1;
   
-  // Draw degree symbol (small circle - 2x2)
+  // Draw degree symbol (small circle - 2x2) to the right of the digits
+  if (c + 1 >= s_grid_cols) return;
   int x = s_grid_offset_x + c * CELL_SIZE;
   int y = s_grid_offset_y + row * CELL_SIZE;
   draw_cell_at(ctx, x, y, CELL_PARTIAL, true);
   draw_cell_at(ctx, x + CELL_SIZE, y, CELL_PARTIAL, true);
   draw_cell_at(ctx, x, y + CELL_SIZE, CELL_PARTIAL, true);
   draw_cell_at(ctx, x + CELL_SIZE, y + CELL_SIZE, CELL_PARTIAL, true);
-  c += 2 + 1;  // 2 wide + 1 spacing
-  
-  // Draw "F" or "C"
-  int letter_index = is_celsius ? 14 : 7;  // C is at index 14, F is at index 7
-  draw_small_letter(ctx, letter_index, c, row, false);
 }
 
 // Canvas update procedure - draws everything directly, no buffer
@@ -604,7 +597,7 @@ static void canvas_update_proc(Layer *layer, GContext *ctx) {
       display_temp = (s_weather_temp * 9 / 5) + 32;
     }
     
-    draw_weather(ctx, weather_col, weather_row, weather_width, weather_height, display_temp, !s_flags.weather_use_fahrenheit);
+    draw_weather(ctx, weather_col, weather_row, weather_width, weather_height, display_temp);
   }
   
   // Step bar (above time, aligned with left side of time)
